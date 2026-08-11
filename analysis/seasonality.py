@@ -33,6 +33,11 @@ OFF_SEASON_INDEX = 88
 CONSISTENCY_REQUIRED = 0.6  # peak must show up in >= 60% of observed years
 RAMP_FRACTION = 0.5         # ramp starts when curve crosses halfway baseline->peak
 
+# Anomaly detection (see find_anomalies for why this is median-based, not mean-based)
+ANOMALY_Z = 3.5             # modified z-score, Iglewicz & Hoaglin convention
+ANOMALY_ABS_FLOOR = 15      # ...and at least this many index points above normal
+ANOMALY_RATIO = 1.5         # ...and at least this multiple of the week's median
+
 
 def parse_trends_csv(path):
     """Return (dates, {term: [values]}) from a Google Trends export.
@@ -140,21 +145,53 @@ def ramp_and_peak(curve):
 
 
 def find_anomalies(dates, values):
-    """Weeks far above the cross-year norm for that calendar week: viral one-offs."""
+    """Weeks far above the cross-year norm for that calendar week: viral one-offs.
+
+    Uses median + MAD rather than mean + standard deviation. Each calendar week
+    has only one observation per year, and a spike inflates its own standard
+    deviation so badly that a mean-based 3-sigma test can never fire: for n
+    points the largest attainable z-score is (n-1)/sqrt(n), which is 1.79 at
+    n=5 and does not reach 3.0 until n=11. Five years of weekly data therefore
+    made the old test unconditionally dead. The median and MAD are unmoved by
+    the outlier, so the spike stays visible.
+
+    A flag requires all three of: modified z-score, an absolute gap in index
+    points, and a ratio to the week's median. MAD is frequently 0 or 1 on smooth
+    series, which inflates the z-score, so the latter two carry the weight there.
+
+    Values are compared within their own year. On a series with a strong secular
+    trend the early years otherwise read as anomalies against a median drawn from
+    the whole range, which says nothing about a viral moment.
+    """
+    by_year = defaultdict(list)
+    for d, v in zip(dates, values):
+        by_year[d.year].append(v)
+    overall = statistics.mean(values)
+    year_mean = {y: statistics.mean(vs) if len(vs) >= 6 else overall
+                 for y, vs in by_year.items()}
+
     by_week = defaultdict(list)
     for d, v in zip(dates, values):
-        by_week[min(d.isocalendar()[1], 52)].append((d, v))
+        detrended = v / year_mean[d.year] * overall if year_mean[d.year] else v
+        by_week[min(d.isocalendar()[1], 52)].append((d, v, detrended))
 
     anomalies = []
     for wk, obs in by_week.items():
         if len(obs) < 3:
             continue
-        vals = [v for _, v in obs]
-        mean, sd = statistics.mean(vals), statistics.pstdev(vals)
-        for d, v in obs:
-            if sd > 0 and v > mean + 3 * sd and v - mean > 25:
+        vals = [t for _, _, t in obs]
+        med = statistics.median(vals)
+        mad = statistics.median([abs(t - med) for t in vals])
+        for d, v, t in obs:
+            gap = t - med
+            if gap < ANOMALY_ABS_FLOOR or t < ANOMALY_RATIO * med:
+                continue
+            # 0.6745 rescales MAD to a standard-deviation equivalent
+            z = 0.6745 * gap / mad if mad > 0 else float("inf")
+            if z >= ANOMALY_Z:
                 anomalies.append({"date": d.isoformat(), "value": v,
-                                  "typical_for_week": round(mean, 1)})
+                                  "typical_for_week": round(med, 1),
+                                  "modified_z": round(z, 1) if mad else None})
     return sorted(anomalies, key=lambda a: a["date"])
 
 
