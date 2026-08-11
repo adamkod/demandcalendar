@@ -1,0 +1,811 @@
+<title>Soccer Balls — Demand Calendar</title>
+
+<style>
+  :root {
+    --paper:   #EDEFEC;
+    --panel:   #F7F8F6;
+    --ink:     #141A18;
+    --ink-2:   #47514D;
+    --ink-3:   #6E7A75;
+    --rule:    #CBD3CF;
+    --rule-2:  #DEE3E0;
+    --pitch:   #1E6B58;
+    --pitch-t: #1E6B5822;
+    --brass:   #8A6716;
+    --brass-t: #8A671622;
+    --madder:  #A83232;
+
+    --f-display: "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
+    --f-body: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+    --f-data: ui-monospace, "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+
+    --wide: 1100px;
+    --prose: 66ch;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:   #0F1412;
+      --panel:   #161D1A;
+      --ink:     #E8EDEA;
+      --ink-2:   #A3B0AA;
+      --ink-3:   #7C8A84;
+      --rule:    #2B3733;
+      --rule-2:  #212B28;
+      --pitch:   #4FB795;
+      --pitch-t: #4FB79526;
+      --brass:   #D9A83E;
+      --brass-t: #D9A83E26;
+      --madder:  #E07A6E;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:   #0F1412;
+    --panel:   #161D1A;
+    --ink:     #E8EDEA;
+    --ink-2:   #A3B0AA;
+    --ink-3:   #7C8A84;
+    --rule:    #2B3733;
+    --rule-2:  #212B28;
+    --pitch:   #4FB795;
+    --pitch-t: #4FB79526;
+    --brass:   #D9A83E;
+    --brass-t: #D9A83E26;
+    --madder:  #E07A6E;
+  }
+
+  :root[data-theme="light"] {
+    --paper:   #EDEFEC;
+    --panel:   #F7F8F6;
+    --ink:     #141A18;
+    --ink-2:   #47514D;
+    --ink-3:   #6E7A75;
+    --rule:    #CBD3CF;
+    --rule-2:  #DEE3E0;
+    --pitch:   #1E6B58;
+    --pitch-t: #1E6B5822;
+    --brass:   #8A6716;
+    --brass-t: #8A671622;
+    --madder:  #A83232;
+  }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 17px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: var(--wide);
+    margin: 0 auto;
+    padding: 0 28px 96px;
+    display: flex;
+    flex-direction: column;
+    gap: 56px;
+  }
+
+  .prose { max-width: var(--prose); }
+
+  /* ---------- masthead ---------- */
+  .masthead {
+    padding-top: 56px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .eyebrow {
+    font-family: var(--f-display);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  h1 {
+    font-family: var(--f-display);
+    font-weight: 800;
+    letter-spacing: -0.028em;
+    font-size: clamp(2.4rem, 6vw, 3.9rem);
+    line-height: 0.98;
+    text-wrap: balance;
+    margin: 0;
+  }
+  .meta {
+    border-top: 2px solid var(--ink);
+    border-bottom: 1px solid var(--rule);
+    padding: 12px 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 32px;
+    font-family: var(--f-data);
+    font-size: 12px;
+    color: var(--ink-2);
+  }
+  .meta b {
+    color: var(--ink);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+
+  /* ---------- thesis ---------- */
+  .thesis {
+    display: grid;
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+    gap: 12px 40px;
+    align-items: center;
+  }
+  .bignum {
+    font-family: var(--f-display);
+    font-weight: 800;
+    font-size: clamp(5rem, 16vw, 9.5rem);
+    line-height: 0.8;
+    letter-spacing: -0.05em;
+    color: var(--pitch);
+    font-variant-numeric: tabular-nums;
+  }
+  .bignum span {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-top: 18px;
+  }
+  .thesis p {
+    margin: 0;
+    font-size: clamp(1.12rem, 2.3vw, 1.45rem);
+    line-height: 1.44;
+    text-wrap: pretty;
+  }
+  .thesis strong { font-weight: 700; }
+
+  /* ---------- sections ---------- */
+  section { display: flex; flex-direction: column; gap: 20px; }
+  h2 {
+    font-family: var(--f-display);
+    font-weight: 800;
+    font-size: clamp(1.4rem, 3vw, 1.9rem);
+    letter-spacing: -0.02em;
+    line-height: 1.12;
+    text-wrap: balance;
+    margin: 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--rule);
+  }
+  p { margin: 0 0 1em; }
+  p:last-child { margin-bottom: 0; }
+
+  .note {
+    font-family: var(--f-data);
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--ink-2);
+    border-left: 2px solid var(--rule);
+    padding-left: 14px;
+  }
+
+  /* ---------- chart ---------- */
+  .chart-block {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .chart-scroll { overflow-x: auto; }
+  .chart-scroll svg { display: block; min-width: 660px; width: 100%; height: auto; }
+  .key {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 26px;
+    font-family: var(--f-data);
+    font-size: 12px;
+    color: var(--ink-2);
+  }
+  .key i {
+    display: inline-block;
+    width: 11px; height: 11px;
+    margin-right: 7px;
+    vertical-align: -1px;
+  }
+  .swatch-pitch { background: var(--pitch); }
+  .swatch-brass { background: var(--brass); }
+
+  .bar { transform-origin: bottom; }
+  @media (prefers-reduced-motion: no-preference) {
+    .bar { animation: rise .7s cubic-bezier(.22,.68,.32,1) both; }
+    @keyframes rise { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+  }
+
+  /* ---------- verdicts ---------- */
+  .verdicts { display: flex; flex-direction: column; gap: 0; }
+  .verdict {
+    display: grid;
+    grid-template-columns: 132px minmax(0, 1fr);
+    gap: 8px 28px;
+    padding: 26px 0;
+    border-top: 1px solid var(--rule);
+  }
+  .verdict:last-child { border-bottom: 1px solid var(--rule); }
+  .stamp {
+    font-family: var(--f-display);
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    align-self: start;
+    padding: 5px 0 5px 11px;
+    border-left: 3px solid currentColor;
+  }
+  .busted { color: var(--madder); }
+  .confirmed { color: var(--pitch); }
+  .verdict h3 {
+    font-family: var(--f-display);
+    font-size: 1.16rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0 0 10px;
+    text-wrap: balance;
+  }
+  .verdict-body { max-width: 62ch; }
+  .verdict-body p { font-size: 16px; }
+  .fig {
+    font-family: var(--f-data);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.92em;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  /* ---------- tables ---------- */
+  .table-scroll {
+    overflow-x: auto;
+    border: 1px solid var(--rule);
+    background: var(--panel);
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 720px;
+    font-size: 14px;
+  }
+  thead th {
+    font-family: var(--f-display);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    text-align: left;
+    color: var(--ink-3);
+    padding: 13px 14px;
+    border-bottom: 2px solid var(--ink);
+    white-space: nowrap;
+  }
+  tbody td {
+    padding: 13px 14px;
+    border-bottom: 1px solid var(--rule-2);
+    vertical-align: top;
+    line-height: 1.45;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  .mon {
+    font-family: var(--f-display);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+  .idx {
+    font-family: var(--f-data);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+  }
+  tr.peak { background: var(--pitch-t); }
+  tr.peak .mon, tr.peak .idx { color: var(--pitch); font-weight: 700; }
+  tr.dark-month td { color: var(--ink-2); }
+  .phase {
+    font-family: var(--f-data);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .dot {
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    margin-right: 8px;
+    vertical-align: 1px;
+  }
+  .d-peak { background: var(--pitch); }
+  .d-ramp { background: var(--pitch); opacity: .55; }
+  .d-flat { background: var(--ink-3); opacity: .45; }
+  .d-trough { background: var(--madder); opacity: .6; }
+
+  /* ---------- lead-time chain ---------- */
+  .chain {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+  }
+  .stop {
+    background: var(--panel);
+    padding: 18px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .stop .when {
+    font-family: var(--f-data);
+    font-size: 11px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .stop .what {
+    font-family: var(--f-display);
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: -0.01em;
+  }
+  .stop .why { font-size: 13.5px; color: var(--ink-2); line-height: 1.42; }
+  .stop.hot { background: var(--pitch-t); }
+  .stop.hot .what { color: var(--pitch); }
+
+  /* ---------- you-are-here ---------- */
+  .status {
+    border: 1px solid var(--brass);
+    background: var(--brass-t);
+    padding: 22px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .status .eyebrow { color: var(--brass); }
+  .status p { max-width: 62ch; }
+
+  /* ---------- caveats ---------- */
+  ol.caveats { margin: 0; padding-left: 1.3em; max-width: var(--prose); }
+  ol.caveats li { margin-bottom: 1em; }
+  ol.caveats li:last-child { margin-bottom: 0; }
+  ol.caveats::marker { font-family: var(--f-data); }
+
+  footer {
+    border-top: 1px solid var(--rule);
+    padding-top: 20px;
+    font-family: var(--f-data);
+    font-size: 11.5px;
+    line-height: 1.7;
+    color: var(--ink-3);
+    max-width: var(--prose);
+  }
+
+  a { color: var(--pitch); }
+  a:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--pitch);
+    outline-offset: 3px;
+  }
+
+  @media (max-width: 620px) {
+    .thesis { grid-template-columns: 1fr; }
+    .verdict { grid-template-columns: 1fr; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="eyebrow">Demand Calendar · Search-interest seasonality</div>
+    <h1>Soccer balls don&rsquo;t have a season. They have a tournament.</h1>
+    <div class="meta">
+      <span><b>Term</b> soccer balls</span>
+      <span><b>Region</b> Worldwide</span>
+      <span><b>Range</b> 2004-01 → 2026-08</span>
+      <span><b>Points</b> 272 monthly · 53 weekly</span>
+      <span><b>Built</b> 2026-08-10</span>
+    </div>
+  </header>
+
+  <div class="thesis">
+    <div class="bignum">29<span>Index-point range</span></div>
+    <p>Strip out the World Cup and the entire year spans <strong>81.8 in January to
+    110.8 in September</strong>. That is a flat category — a genuinely seasonal one
+    runs a 150&ndash;200 point spread. The largest mover of search interest here is
+    not a season at all. It is a tournament that happens every four years.</p>
+  </div>
+
+  <section>
+    <h2>The aggregate index invents a June peak that ordinary years never had</h2>
+    <div class="chart-block">
+      <div class="chart-scroll">
+        <svg viewBox="0 0 1000 372" role="img"
+             aria-label="Grouped bar chart of monthly search-interest index. In ordinary years June reads 103.6, essentially average, while in World Cup years it reads 153.4. September is the highest ordinary-year month at 110.8.">
+          <g font-family="ui-monospace, Consolas, monospace" font-size="11" fill="currentColor" opacity="0.55">
+            <text x="52" y="324" text-anchor="end">0</text>
+            <text x="52" y="230" text-anchor="end">50</text>
+            <text x="52" y="136" text-anchor="end">100</text>
+            <text x="52" y="42" text-anchor="end">150</text>
+          </g>
+          <g stroke="currentColor" opacity="0.14">
+            <line x1="62" y1="320" x2="980" y2="320" />
+            <line x1="62" y1="226.3" x2="980" y2="226.3" />
+            <line x1="62" y1="38.8" x2="980" y2="38.8" />
+          </g>
+          <line x1="62" y1="132.5" x2="980" y2="132.5" stroke="currentColor"
+                stroke-width="1.5" stroke-dasharray="5 4" opacity="0.5" />
+          <text x="984" y="129" font-family="ui-monospace, Consolas, monospace"
+                font-size="10" fill="currentColor" opacity="0.6">avg</text>
+
+          <g class="bars">
+            <!-- ordinary years -->
+            <g fill="var(--pitch)">
+              <rect class="bar" x="82.0"  y="166.6" width="24" height="153.4" style="animation-delay:.02s" />
+              <rect class="bar" x="157.8" y="142.4" width="24" height="177.6" style="animation-delay:.05s" />
+              <rect class="bar" x="233.7" y="130.3" width="24" height="189.7" style="animation-delay:.08s" />
+              <rect class="bar" x="309.5" y="125.4" width="24" height="194.6" style="animation-delay:.11s" />
+              <rect class="bar" x="385.3" y="113.4" width="24" height="206.6" style="animation-delay:.14s" />
+              <rect class="bar" x="461.2" y="125.8" width="24" height="194.2" style="animation-delay:.17s" />
+              <rect class="bar" x="537.0" y="154.8" width="24" height="165.2" style="animation-delay:.20s" />
+              <rect class="bar" x="612.8" y="136.3" width="24" height="183.7" style="animation-delay:.23s" />
+              <rect class="bar" x="688.7" y="112.3" width="24" height="207.7" style="animation-delay:.26s" />
+              <rect class="bar" x="764.5" y="127.3" width="24" height="192.7" style="animation-delay:.29s" />
+              <rect class="bar" x="840.3" y="121.1" width="24" height="198.9" style="animation-delay:.32s" />
+              <rect class="bar" x="916.2" y="134.8" width="24" height="185.2" style="animation-delay:.35s" />
+            </g>
+            <!-- world cup years -->
+            <g fill="var(--brass)">
+              <rect class="bar" x="110.0" y="191.2" width="24" height="128.8" style="animation-delay:.03s" />
+              <rect class="bar" x="185.8" y="174.3" width="24" height="145.7" style="animation-delay:.06s" />
+              <rect class="bar" x="261.7" y="159.5" width="24" height="160.5" style="animation-delay:.09s" />
+              <rect class="bar" x="337.5" y="143.0" width="24" height="177.0" style="animation-delay:.12s" />
+              <rect class="bar" x="413.3" y="119.2" width="24" height="200.8" style="animation-delay:.15s" />
+              <rect class="bar" x="489.2" y="32.4"  width="24" height="287.6" style="animation-delay:.18s" />
+              <rect class="bar" x="565.0" y="105.9" width="24" height="214.1" style="animation-delay:.21s" />
+              <rect class="bar" x="640.8" y="139.1" width="24" height="180.9" style="animation-delay:.24s" />
+              <rect class="bar" x="716.7" y="127.6" width="24" height="192.4" style="animation-delay:.27s" />
+              <rect class="bar" x="792.5" y="138.3" width="24" height="181.7" style="animation-delay:.30s" />
+              <rect class="bar" x="868.3" y="128.2" width="24" height="191.8" style="animation-delay:.33s" />
+              <rect class="bar" x="944.2" y="131.0" width="24" height="189.0" style="animation-delay:.36s" />
+            </g>
+          </g>
+
+          <!-- callouts -->
+          <g font-family="ui-monospace, Consolas, monospace" font-size="11">
+            <text x="501" y="24" text-anchor="middle" fill="var(--brass)" font-weight="700">153.4</text>
+            <text x="473" y="118" text-anchor="middle" fill="var(--pitch)" font-weight="700">103.6</text>
+            <text x="700" y="104" text-anchor="middle" fill="var(--pitch)" font-weight="700">110.8</text>
+          </g>
+
+          <line x1="62" y1="320" x2="980" y2="320" stroke="currentColor" stroke-width="1.5" />
+
+          <!-- month labels -->
+          <g font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="700"
+             text-anchor="middle" fill="currentColor">
+            <text x="108" y="340">JAN</text>
+            <text x="184" y="340">FEB</text>
+            <text x="260" y="340">MAR</text>
+            <text x="335" y="340">APR</text>
+            <text x="411" y="340">MAY</text>
+            <text x="487" y="340" fill="var(--brass)">JUN</text>
+            <text x="563" y="340">JUL</text>
+            <text x="639" y="340">AUG</text>
+            <text x="714" y="340" fill="var(--pitch)">SEP</text>
+            <text x="790" y="340">OCT</text>
+            <text x="866" y="340">NOV</text>
+            <text x="942" y="340">DEC</text>
+          </g>
+          <!-- consistency row -->
+          <g font-family="ui-monospace, Consolas, monospace" font-size="10"
+             text-anchor="middle" fill="currentColor" opacity="0.55">
+            <text x="62" y="362" text-anchor="start" opacity="0.8">consistency</text>
+            <text x="108" y="362">0%</text>
+            <text x="184" y="362">6%</text>
+            <text x="260" y="362">18%</text>
+            <text x="335" y="362">29%</text>
+            <text x="411" y="362">41%</text>
+            <text x="487" y="362">24%</text>
+            <text x="563" y="362">0%</text>
+            <text x="639" y="362">6%</text>
+            <text x="714" y="362" fill="var(--pitch)" opacity="1" font-weight="700">76%</text>
+            <text x="790" y="362">24%</text>
+            <text x="866" y="362">35%</text>
+            <text x="942" y="362">12%</text>
+          </g>
+        </svg>
+      </div>
+      <div class="key">
+        <span><i class="swatch-pitch"></i>Ordinary years (n=17)</span>
+        <span><i class="swatch-brass"></i>World Cup years (n=5)</span>
+        <span>Index: 100 = that year&rsquo;s own average</span>
+        <span>Consistency: share of ordinary years the month ran elevated</span>
+      </div>
+    </div>
+    <p class="note">Google Trends reports a <b>relative interest index (0&ndash;100)</b>,
+    not search volume. Every figure on this page is an index. Nothing here is a unit
+    forecast.</p>
+  </section>
+
+  <section>
+    <h2>Verdicts on assumed peaks</h2>
+
+    <div class="verdicts">
+      <div class="verdict">
+        <div class="stamp busted">Busted</div>
+        <div class="verdict-body">
+          <h3>&ldquo;Summer &mdash; June and July &mdash; is peak soccer ball season.&rdquo;</h3>
+          <p>The most intuitive belief about this category, and it is false. In ordinary
+          years <span class="fig">June indexes 103.6</span> and is elevated in only
+          <span class="fig">4 of 17</span> years. <span class="fig">July indexes
+          88.1</span> and has been elevated in <span class="fig">0 of 17</span> &mdash;
+          it is one of the two worst months of the year.</p>
+          <p>The apparent summer peak is entirely tournament contamination: June reads
+          <span class="fig">153.4</span> in World Cup years against
+          <span class="fig">103.6</span> in ordinary ones, a
+          <span class="fig">49.7-point</span> gap. Pool all years together and June
+          misleadingly becomes the top month at 121.2.</p>
+          <p>Women&rsquo;s World Cup years (2007, 2011, 2015, 2019, 2023) sit
+          <em>inside</em> the ordinary-year baseline above and still produce no June
+          peak. The men&rsquo;s tournament is the only mover.</p>
+        </div>
+      </div>
+
+      <div class="verdict">
+        <div class="stamp confirmed">Confirmed</div>
+        <div class="verdict-body">
+          <h3>&ldquo;There is a back-to-school and fall-season bump.&rdquo;</h3>
+          <p>The one real, plannable pattern in the data.
+          <span class="fig">September indexes 110.8</span> and is elevated in
+          <span class="fig">13 of 17</span> ordinary years &mdash; the only month
+          clearing the consistency bar. The climb into it is the year&rsquo;s largest
+          ordinary move: <span class="fig">August +9.9</span>, then
+          <span class="fig">September +12.8</span> month-over-month.</p>
+          <p>The weekly file corroborates it independently: September 2025 averaged
+          <span class="fig">36.0</span> against October at <span class="fig">33.5</span>,
+          in a stretch with no tournament activity.</p>
+          <p><strong>The honest limit:</strong> September is the highest month on
+          average and the most consistently elevated, but it is the outright best month
+          in only <span class="fig">4 of 17</span> years. This is a reliable shallow
+          bump, not a spike. Size the spend to match.</p>
+        </div>
+      </div>
+
+      <div class="verdict">
+        <div class="stamp busted">Busted</div>
+        <div class="verdict-body">
+          <h3>&ldquo;December holiday gifting drives a peak.&rdquo;</h3>
+          <p><span class="fig">December indexes 98.8</span> &mdash; below average &mdash;
+          and is elevated in <span class="fig">2 of 17</span> ordinary years. November is
+          marginally better at <span class="fig">106.1</span> but still fails consistency
+          at <span class="fig">35%</span>. The December 2022 reading of
+          <span class="fig">145.2</span> that would seem to support gifting was Qatar,
+          not Christmas.</p>
+        </div>
+      </div>
+    </div>
+
+    <p class="note">These are the three beliefs most commonly held about the category,
+    standing in for assumptions that were not supplied &mdash; including the one the
+    <b>relatedQueries</b> export shows the market actively acting on. Swap in real
+    assumptions and the verdicts can be re-run.</p>
+  </section>
+
+  <section>
+    <h2>The calendar</h2>
+    <p class="prose">Ordinary years &mdash; applicable from now through 2029. Index is
+    the ordinary-year seasonal index, where 100 is the annual average.</p>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Month</th>
+            <th>Demand phase</th>
+            <th style="text-align:right">Index</th>
+            <th>Editorial &mdash; publish</th>
+            <th>Campaign &mdash; spend</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="dark-month">
+            <td class="mon">Jan</td>
+            <td class="phase"><i class="dot d-trough"></i>Trough</td>
+            <td class="idx">81.8</td>
+            <td>Evergreen and technical SEO; buying guides, size charts</td>
+            <td><strong>Dark.</strong> No paid spend</td>
+          </tr>
+          <tr>
+            <td class="mon">Feb</td>
+            <td class="phase"><i class="dot d-flat"></i>Recovery</td>
+            <td class="idx">94.7</td>
+            <td>Refresh last year&rsquo;s ranking pages</td>
+            <td>Minimal</td>
+          </tr>
+          <tr>
+            <td class="mon">Mar</td>
+            <td class="phase"><i class="dot d-flat"></i>Slow climb</td>
+            <td class="idx">101.2</td>
+            <td>Spring-season prep; club and team bulk pages</td>
+            <td>Minimal; test bulk and team keywords</td>
+          </tr>
+          <tr>
+            <td class="mon">Apr</td>
+            <td class="phase"><i class="dot d-flat"></i>Mild climb</td>
+            <td class="idx">103.8</td>
+            <td>&mdash;</td>
+            <td>Light spring-season</td>
+          </tr>
+          <tr>
+            <td class="mon">May</td>
+            <td class="phase"><i class="dot d-flat"></i>Unreliable bump</td>
+            <td class="idx">110.2</td>
+            <td><strong>Publish the September content now</strong> &mdash; 8&ndash;12 week SEO lead</td>
+            <td>Light. 41% consistency does not justify real budget</td>
+          </tr>
+          <tr>
+            <td class="mon">Jun</td>
+            <td class="phase"><i class="dot d-flat"></i>Average</td>
+            <td class="idx">103.6</td>
+            <td>&mdash;</td>
+            <td><strong>Do not spend against a summer peak</strong></td>
+          </tr>
+          <tr class="dark-month">
+            <td class="mon">Jul</td>
+            <td class="phase"><i class="dot d-trough"></i>Second-worst month</td>
+            <td class="idx">88.1</td>
+            <td>Evergreen and link-building only</td>
+            <td><strong>Dark.</strong> Elevated in 0 of 17 years</td>
+          </tr>
+          <tr>
+            <td class="mon">Aug</td>
+            <td class="phase"><i class="dot d-ramp"></i>Ramp start</td>
+            <td class="idx">98.0</td>
+            <td>Last call &mdash; anything not live now misses</td>
+            <td><strong>Start paid, weeks 2&ndash;4</strong></td>
+          </tr>
+          <tr class="peak">
+            <td class="mon">Sep</td>
+            <td class="phase"><i class="dot d-peak"></i>Peak &mdash; the only real one</td>
+            <td class="idx">110.8</td>
+            <td>Registration and back-to-school, youth sizing, team kit</td>
+            <td><strong>Peak cadence. Full budget</strong></td>
+          </tr>
+          <tr>
+            <td class="mon">Oct</td>
+            <td class="phase"><i class="dot d-flat"></i>Post-peak decay</td>
+            <td class="idx">102.8</td>
+            <td>&mdash;</td>
+            <td><strong>Cut spend in week 1.</strong> Interest falls faster than it rises</td>
+          </tr>
+          <tr>
+            <td class="mon">Nov</td>
+            <td class="phase"><i class="dot d-flat"></i>Mild, inconsistent</td>
+            <td class="idx">106.1</td>
+            <td>Gift-guide placement &mdash; a hedge, not a bet</td>
+            <td>Light retail and gifting test only</td>
+          </tr>
+          <tr>
+            <td class="mon">Dec</td>
+            <td class="phase"><i class="dot d-flat"></i>Decline</td>
+            <td class="idx">98.8</td>
+            <td>Plan next year</td>
+            <td>Minimal</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Lead-time chain for the September peak</h2>
+    <p class="prose">Ramp start is early August &mdash; the first meaningful positive
+    month-over-month move at +9.9. Everything else counts backward and forward from
+    there.</p>
+    <div class="chain">
+      <div class="stop">
+        <div class="when">Mid-May → early Jun</div>
+        <div class="what">Publish SEO</div>
+        <div class="why">8&ndash;12 weeks before ramp start. Content needs time to index and rank.</div>
+      </div>
+      <div class="stop">
+        <div class="when">Mid-July</div>
+        <div class="what">Email &amp; social</div>
+        <div class="why">2&ndash;4 weeks before ramp start.</div>
+      </div>
+      <div class="stop">
+        <div class="when">Mid–late Aug</div>
+        <div class="what">Paid starts</div>
+        <div class="why">2&ndash;4 weeks before the peak month.</div>
+      </div>
+      <div class="stop hot">
+        <div class="when">September</div>
+        <div class="what">Peak cadence</div>
+        <div class="why">Full budget. Index 110.8, consistent in 13 of 17 years.</div>
+      </div>
+      <div class="stop">
+        <div class="when">Early October</div>
+        <div class="what">Cut spend</div>
+        <div class="why">Week 1. The decline is faster than the climb.</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Tournament overlay</h2>
+    <div class="status">
+      <div class="eyebrow">You are here</div>
+      <p>The 2026 World Cup peaked the week of <span class="fig">2026-06-14 at 100</span>.
+      The most recent observation, <span class="fig">2026-08-09</span>, reads
+      <span class="fig">43 &mdash; down 57%</span> from that peak. The tournament window
+      is closed and interest is reverting to baseline.</p>
+      <p><strong>The next men&rsquo;s World Cup is 2030.</strong> The next three and a
+      half years are ordinary years. Run the baseline calendar and do not budget for
+      another June.</p>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Tournament</th>
+            <th>Month</th>
+            <th style="text-align:right">Index vs. its own year</th>
+            <th>Note</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="mon">2006</td><td class="phase">Jun</td><td class="idx">164.2 &nbsp;(+64%)</td><td>Germany</td></tr>
+          <tr><td class="mon">2010</td><td class="phase">Jun</td><td class="idx">205.0 &nbsp;(+105%)</td><td>South Africa &mdash; the largest lift on record</td></tr>
+          <tr><td class="mon">2014</td><td class="phase">Jun</td><td class="idx">163.6 &nbsp;(+64%)</td><td>Brazil</td></tr>
+          <tr><td class="mon">2018</td><td class="phase">Jun</td><td class="idx">132.4 &nbsp;(+32%)</td><td>Russia &mdash; weakest lift</td></tr>
+          <tr><td class="mon">2022</td><td class="phase">Dec</td><td class="idx">145.2 &nbsp;(+45%)</td><td><strong>Qatar &mdash; played Nov&ndash;Dec, not Jun&ndash;Jul</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="prose">Qatar is why this cannot be handled with a standard seasonal
+    adjustment. The contamination is not even at a fixed point in the calendar, so
+    the tournament windows have to be identified and excluded deliberately.</p>
+    <p class="prose">For 2030, the pattern across five tournaments is consistent enough
+    to plan against: interest climbs roughly <strong>4&ndash;6 weeks before
+    kickoff</strong>, peaks during the <strong>group stage</strong> &mdash; in 2026 the
+    week of June 14, the tournament&rsquo;s first week &mdash; and collapses within
+    <strong>2&ndash;3 weeks of the final</strong>. Apply the standard lead times to
+    those dates once confirmed, and confirm the actual window rather than assuming June.</p>
+  </section>
+
+  <section>
+    <h2>Caveats</h2>
+    <ol class="caveats">
+      <li><strong>Region is Worldwide, not a single market.</strong> The
+      <span class="fig">geoMap</span> export ranks South Africa (100) and Australia (84)
+      above the United States (66) &mdash; opposite hemispheres. September is autumn in
+      the north and spring in the south, so both plausibly drive a September bump. The
+      <em>timing</em> is corroborated; the <em>mechanism</em> is not established. A
+      US-only export would settle it and could shift the ramp by weeks.</li>
+      <li><strong>Weekly ramp timing is inferred from monthly data.</strong> The 22-year
+      file is monthly, so a true ramp-start week cannot be computed from it &mdash; the
+      analyzer&rsquo;s week-level output for that file is an artifact and was discarded.
+      The August ramp start is derived from month-over-month change. The only weekly file
+      available covers a single, tournament-contaminated year.</li>
+      <li><strong>Long-run decline is search behaviour, not market size.</strong> The raw
+      annual mean fell from <span class="fig">63.9 in 2004 to 17.6 in 2020</span> &mdash;
+      a 72% drop &mdash; recovering to <span class="fig">25.7 in 2025</span>. This
+      reflects migration to Amazon and retailer apps. Do not read it as collapsing demand.</li>
+      <li><strong>Term choice.</strong> The <span class="fig">relatedQueries</span> export
+      ranks the singular <em>soccer ball</em> at 99 against this plural term. The seasonal
+      shape should be similar, but the plural is the smaller variant.</li>
+    </ol>
+  </section>
+
+  <footer>
+    Sources: data/soccer-balls-worldwide-2004-2026-monthly.csv (272 monthly points,
+    2004-01 → 2026-08) and data/soccer-balls-worldwide-1yr.csv (53 weekly points,
+    2025-08 → 2026-08), with the matching relatedQueries, relatedEntities and geoMap
+    exports. Analysis: analysis/seasonality.py and analysis/worldcup_split.py.
+    Consistency threshold 60% of observed years; peak threshold index 115; mild bump 107.
+  </footer>
+
+</div>
