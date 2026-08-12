@@ -61,6 +61,16 @@ Data flows in two ways: files in `data/` compiled by `analysis/build_site_data.p
 and stores it locally. Until real files land, every synthetic series is labeled SAMPLE and
 a warning banner stays up.
 
+### Sharing it
+
+`site/demand-calendar-standalone.html` is the same dashboard with the data inlined into a
+single file — no siblings required. Email it, drop it in Drive, or open it from a USB stick.
+Rebuild it after any change to the site or the data:
+
+```
+py analysis/build_standalone.py
+```
+
 ## Project structure
 
 ```
@@ -69,13 +79,15 @@ demand-calendar/
 ├── CLAUDE.md                  ← the AI agent: role, workflow, output format
 ├── analysis/
 │   ├── seasonality.py         ← seasonality + peak-reality analyzer (stdlib only)
-│   └── build_site_data.py     ← compiles data/*.csv (+ sample fill-in) into site/data.js
+│   ├── build_site_data.py     ← compiles data/*.csv (+ sample fill-in) into site/data.js
+│   └── build_standalone.py    ← inlines data.js into one shareable HTML file
 ├── data/
 │   ├── HOW-TO-DOWNLOAD.md     ← step-by-step Google Trends export guide
 │   └── sample_multiTimeline.csv  ← synthetic sample so the script runs out of the box
 ├── site/
-│   ├── index.html             ← the dashboard (self-contained, open it directly)
-│   └── data.js                ← generated; do not hand-edit
+│   ├── index.html             ← the dashboard — open it directly, no server needed
+│   ├── data.js                ← generated; do not hand-edit
+│   └── demand-calendar-standalone.html  ← generated; one file to share
 └── output/                    ← generated calendars land here
 ```
 
