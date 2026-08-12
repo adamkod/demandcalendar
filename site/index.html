@@ -1,0 +1,1650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demand Calendar — MGMT 440</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7; --surface: #fcfcfb;
+    --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --baseline: #c3c2b7; --border: rgba(11,11,11,.10);
+    --s1: #2a78d6; --s1-wash: rgba(42,120,214,.10);
+    --chip-publish: #cde2fb; --chip-ramp: #9ec5f4; --chip-peak: #2a78d6;
+    --chip-peak-ink: #ffffff; --chip-off: #f0efec;
+    --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+    --anom: #ec835a;
+  }
+  :root[data-theme="dark"] { color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19;
+    --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --baseline: #383835; --border: rgba(255,255,255,.10);
+    --s1: #3987e5; --s1-wash: rgba(57,135,229,.12);
+    --chip-publish: #104281; --chip-ramp: #1c5cab; --chip-peak: #3987e5;
+    --chip-peak-ink: #ffffff; --chip-off: #2c2c2a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { color-scheme: dark;
+      --page: #0d0d0d; --surface: #1a1a19;
+      --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --baseline: #383835; --border: rgba(255,255,255,.10);
+      --s1: #3987e5; --s1-wash: rgba(57,135,229,.12);
+      --chip-publish: #104281; --chip-ramp: #1c5cab; --chip-peak: #3987e5;
+      --chip-peak-ink: #ffffff; --chip-off: #2c2c2a;
+    }
+  }
+  * { box-sizing: border-box; }
+  /* `display` on .banner/.field would otherwise beat the hidden attribute */
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--page); color: var(--ink);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 20px 20px 48px; }
+
+  header.top { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  header.top h1 { font-size: 20px; font-weight: 600; margin: 0; }
+  header.top .sub { color: var(--ink-2); font-size: 13px; }
+  .top-actions { margin-left: auto; display: flex; gap: 8px; }
+  button, .btn { font: inherit; color: var(--ink); background: var(--surface);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px;
+    cursor: pointer; }
+  button:hover { border-color: var(--baseline); }
+  button.primary { background: var(--s1); color: #fff; border-color: transparent; }
+
+  .banner { display: flex; gap: 10px; align-items: center; margin: 14px 0 0;
+    padding: 10px 14px; border: 1px solid var(--border); border-left: 4px solid var(--warning);
+    border-radius: 8px; background: var(--surface); font-size: 13px; color: var(--ink-2); }
+  .banner b { color: var(--ink); }
+
+  nav.tabs { display: flex; gap: 6px; margin: 18px 0 0; flex-wrap: wrap; }
+  nav.tabs button { border-radius: 999px; padding: 7px 16px; font-weight: 500; }
+  nav.tabs button[aria-selected="true"] { background: var(--ink); color: var(--page);
+    border-color: transparent; }
+
+  .terms { display: flex; gap: 6px; align-items: center; margin: 14px 0 4px; flex-wrap: wrap; }
+  .terms .lbl { font-size: 12px; color: var(--muted); margin-right: 2px; }
+  .terms button { border-radius: 999px; padding: 4px 12px; font-size: 13px; }
+  .terms button[aria-pressed="true"] { border-color: var(--s1); color: var(--s1);
+    font-weight: 600; }
+  .provenance { font-size: 12px; color: var(--muted); margin: 2px 0 14px; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 10px; margin: 0 0 14px; }
+  .tile { background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 14px; }
+  .tile .lbl { font-size: 12px; color: var(--ink-2); }
+  .tile .val { font-size: 26px; font-weight: 600; margin-top: 2px; }
+  .tile .note { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  section.panel { background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px 18px; margin: 0 0 14px; }
+  section.panel h2 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  section.panel .sub { font-size: 12.5px; color: var(--ink-2); margin: 0 0 10px; }
+
+  .chart-box { position: relative; }
+  .chart-box svg { display: block; width: 100%; height: auto; }
+  .tooltip { position: absolute; pointer-events: none; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px;
+    font-size: 12.5px; box-shadow: 0 4px 14px rgba(0,0,0,.12); display: none;
+    white-space: nowrap; z-index: 5; }
+  .tooltip b { font-variant-numeric: tabular-nums; }
+  details.tbl { margin-top: 8px; font-size: 12.5px; }
+  details.tbl summary { color: var(--muted); cursor: pointer; }
+  details.tbl table { border-collapse: collapse; margin-top: 8px; }
+  details.tbl th, details.tbl td { padding: 3px 12px 3px 0; text-align: right;
+    font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--grid); }
+  details.tbl th:first-child, details.tbl td:first-child { text-align: left; }
+  details.tbl th { color: var(--ink-2); font-weight: 500; }
+
+  .verdicts { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+    gap: 10px; }
+  .verdict { display: flex; gap: 12px; border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 14px; align-items: flex-start; }
+  .verdict .glyph { font-size: 18px; line-height: 1.2; }
+  .verdict .name { font-weight: 600; }
+  .verdict .chip { display: inline-block; font-size: 11.5px; font-weight: 700;
+    letter-spacing: .04em; border-radius: 6px; padding: 1px 8px; margin-left: 6px;
+    vertical-align: 1px; }
+  .verdict .why { font-size: 12.5px; color: var(--ink-2); margin-top: 3px; }
+  .verdict .rm { margin-left: auto; border: none; background: none; color: var(--muted);
+    font-size: 15px; padding: 0 2px; }
+  .v-confirmed .chip { background: color-mix(in srgb, var(--good) 15%, transparent); }
+  .v-mistimed  .chip { background: color-mix(in srgb, var(--warning) 20%, transparent); }
+  .v-overrated .chip { background: color-mix(in srgb, var(--serious) 18%, transparent); }
+  .v-busted    .chip { background: color-mix(in srgb, var(--critical) 15%, transparent); }
+  .add-assumed { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .add-assumed input, .add-assumed select { font: inherit; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 10px; }
+  .add-assumed input { flex: 1; min-width: 200px; }
+
+  table.cal { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.cal th { text-align: left; color: var(--ink-2); font-weight: 500;
+    font-size: 12px; padding: 6px 10px; border-bottom: 1px solid var(--baseline); }
+  table.cal td { padding: 8px 10px; border-bottom: 1px solid var(--grid);
+    vertical-align: top; }
+  table.cal td.num { font-variant-numeric: tabular-nums; text-align: right; }
+  .phase { display: inline-block; font-size: 11.5px; font-weight: 600;
+    border-radius: 6px; padding: 2px 9px; white-space: nowrap;
+    border: 1px solid var(--border); }
+  .p-publish { background: var(--chip-publish); border-color: transparent; }
+  .p-ramp { background: var(--chip-ramp); border-color: transparent; }
+  .p-peak { background: var(--chip-peak); color: var(--chip-peak-ink); border-color: transparent; }
+  .p-off { background: var(--chip-off); color: var(--ink-2); border-color: transparent; }
+  .p-cool, .p-steady, .p-second { color: var(--ink-2); }
+  :root[data-theme="dark"] .p-publish, :root[data-theme="dark"] .p-ramp { color: #fff; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .p-publish,
+    :root:not([data-theme="light"]) .p-ramp { color: #fff; }
+  }
+
+  .anom-list { font-size: 12.5px; color: var(--ink-2); margin: 8px 0 0; padding: 0;
+    list-style: none; }
+  .anom-list li { margin: 2px 0; }
+  .anom-ico { color: var(--anom); font-weight: 700; }
+
+  /* ---- overview home tab ---- */
+  .ov-legend { display: flex; align-items: center; gap: 10px; margin-top: 10px;
+    font-size: 11.5px; color: var(--muted); }
+  .ov-legend .ramp { height: 10px; width: 160px; border-radius: 5px; }
+  .scoreboard { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px; margin-bottom: 14px; }
+  .score { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+    background: var(--surface); }
+  .score .n { font-size: 24px; font-weight: 600; }
+  .score .k { font-size: 12px; color: var(--ink-2); }
+  table.keydates { width: 100%; min-width: 520px; border-collapse: collapse;
+    font-size: 13px; margin-top: 14px; }
+  table.keydates th { text-align: left; font-size: 12px; font-weight: 500; color: var(--ink-2);
+    padding: 6px 10px; border-bottom: 1px solid var(--baseline); }
+  table.keydates td { padding: 7px 10px; border-bottom: 1px solid var(--grid); }
+  table.keydates td.num { font-variant-numeric: tabular-nums; }
+  .dotkey { display: inline-block; width: 9px; height: 9px; border-radius: 3px;
+    margin-right: 7px; vertical-align: 0px; }
+
+  /* ---- budget planner ---- */
+  .controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 14px 18px; align-items: end; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12px; color: var(--ink-2); }
+  .field select, .field input[type=text] { font: inherit; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 10px; width: 100%; }
+  .field input[type=range] { width: 100%; accent-color: var(--s1); }
+  .field .hint { font-size: 11.5px; color: var(--muted); }
+  .money-in { display: flex; align-items: center; gap: 0; border: 1px solid var(--border);
+    border-radius: 8px; background: var(--surface); overflow: hidden; }
+  .money-in span { padding: 7px 2px 7px 10px; color: var(--muted); }
+  .money-in input { border: none; background: transparent; font: inherit; color: var(--ink);
+    padding: 7px 10px 7px 2px; width: 100%; font-variant-numeric: tabular-nums; outline: none; }
+  .role-note { font-size: 12.5px; color: var(--ink-2); margin: 12px 0 0;
+    border-left: 3px solid var(--s1); padding-left: 10px; }
+  .legend-row { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px;
+    color: var(--ink-2); margin: 4px 0 10px; }
+  .legend-row span.key { display: inline-flex; align-items: center; gap: 6px; }
+  table.alloc { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.alloc th { text-align: left; font-size: 12px; font-weight: 500; color: var(--ink-2);
+    padding: 6px 10px; border-bottom: 1px solid var(--baseline); }
+  table.alloc td { padding: 7px 10px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  table.alloc td.num { text-align: right; font-variant-numeric: tabular-nums;
+    white-space: nowrap; }
+  table.alloc tr.is-peak td { background: var(--s1-wash); }
+  table.alloc tfoot td { font-weight: 600; border-top: 1px solid var(--baseline);
+    border-bottom: none; }
+  .qtiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px; margin: 0 0 14px; }
+
+  dialog { border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
+    color: var(--ink); max-width: 520px; width: calc(100% - 40px); padding: 20px; }
+  dialog::backdrop { background: rgba(0,0,0,.35); }
+  dialog h2 { margin: 0 0 6px; font-size: 16px; }
+  dialog p, dialog li { font-size: 13px; color: var(--ink-2); }
+  dialog .row { display: flex; gap: 8px; margin: 10px 0; align-items: center; flex-wrap: wrap; }
+  dialog select, dialog input[type=file] { font: inherit; }
+  .import-summary { font-size: 13px; background: var(--page); border-radius: 8px;
+    padding: 10px 12px; margin: 10px 0; }
+  footer { color: var(--muted); font-size: 12px; margin-top: 26px; line-height: 1.6; }
+  footer code { background: var(--surface); border: 1px solid var(--border);
+    border-radius: 4px; padding: 0 5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Demand Calendar</h1>
+    <span class="sub">MGMT 440 · search-interest seasonality → editorial &amp; campaign calendar</span>
+    <div class="top-actions">
+      <button id="btn-import">Import Trends CSV</button>
+      <button id="btn-theme" title="Toggle theme">◐ Theme</button>
+      <button id="btn-help" title="How to get the data">?</button>
+    </div>
+  </header>
+
+  <div class="banner" id="sample-banner" hidden>
+    <span style="color:var(--warning);font-size:16px">⚠</span>
+    <span><b>SAMPLE DATA.</b> <span id="sample-msg"></span> Numbers below are synthetic and
+    exist to demo the interface — import real Google Trends exports before drawing conclusions.</span>
+  </div>
+
+  <nav class="tabs" id="tabs" role="tablist"></nav>
+
+  <div id="view-overview" hidden>
+    <section class="panel" style="margin-top:14px">
+      <h2>The demand year, all four categories</h2>
+      <p class="sub">Each row is one category's headline term, January to December. Darker =
+        hotter than that term's own yearly average. Comparable across rows because every row
+        is indexed to itself (100 = normal for that term).</p>
+      <div class="chart-box" id="chart-overview"></div>
+      <div class="ov-legend">
+        <span>Cooler than normal</span>
+        <div class="ramp" id="ov-ramp"></div>
+        <span>Hotter than normal</span>
+        <span style="margin-left:auto">▲ real peak · △ year's high point, but not a real peak
+          · numbers shown on peaks and bumps only</span>
+      </div>
+      <div style="overflow-x:auto"><table class="keydates" id="keydates"></table></div>
+    </section>
+
+    <section class="panel">
+      <h2>Assumption scoreboard</h2>
+      <p class="sub">Every assumed peak across all four categories, judged against the
+        long-horizon data. Open a category tab to edit its assumptions.</p>
+      <div class="scoreboard" id="scoreboard"></div>
+      <div class="verdicts" id="all-verdicts"></div>
+    </section>
+  </div>
+
+  <div id="view-budget" hidden>
+    <section class="panel" style="margin-top:14px">
+      <h2>Budget planner</h2>
+      <p class="sub">Tell it your job and your budget. It returns a month-by-month spend plan
+        that leads demand instead of chasing it.</p>
+      <div class="controls">
+        <div class="field">
+          <label for="role">What's your job?</label>
+          <select id="role"></select>
+        </div>
+        <div class="field" id="field-cat" hidden>
+          <label for="budget-cat">Category to plan against</label>
+          <select id="budget-cat"></select>
+        </div>
+        <div class="field">
+          <label for="budget">Annual marketing budget</label>
+          <div class="money-in"><span>$</span><input type="text" id="budget"
+            inputmode="numeric" autocomplete="off"></div>
+        </div>
+        <div class="field">
+          <label for="mix">Content &amp; SEO share — <b id="mix-val">35%</b></label>
+          <input type="range" id="mix" min="0" max="70" step="5">
+          <span class="hint">The rest goes to paid media. Content spend lands
+            ~3 months before the demand it serves; paid lands just ahead of it.</span>
+        </div>
+        <div class="field">
+          <label for="conc">Concentration — <b id="conc-val">Balanced</b></label>
+          <input type="range" id="conc" min="10" max="40" step="5">
+          <span class="hint">How hard to push budget into peak months versus spreading
+            it evenly across the year.</span>
+        </div>
+      </div>
+      <p class="role-note" id="role-note"></p>
+    </section>
+
+    <div class="qtiles" id="qtiles"></div>
+
+    <section class="panel">
+      <h2 id="budget-h">Monthly allocation</h2>
+      <p class="sub" id="budget-sub"></p>
+      <div class="legend-row" id="budget-legend"></div>
+      <div class="chart-box" id="chart-budget"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Where the money goes, and why</h2>
+      <p class="sub">Each month's share is driven by the demand it is buying ahead of —
+        not by the demand happening that month.</p>
+      <div style="overflow-x:auto"><table class="alloc" id="alloc-table"></table></div>
+      <div style="margin-top:12px"><button id="btn-csv">Download plan as CSV</button></div>
+    </section>
+  </div>
+
+  <div id="view-category">
+  <div class="terms" id="terms"></div>
+  <div class="provenance" id="provenance"></div>
+
+  <div class="cards" id="tiles"></div>
+
+  <section class="panel">
+    <h2>Assumed peaks — reality check</h2>
+    <p class="sub">The peaks your plan assumes, judged against every tracked term in this
+      category. Add your own assumptions; each gets a verdict from the 10-year monthly data.</p>
+    <div class="verdicts" id="verdicts"></div>
+    <div class="add-assumed">
+      <input id="assume-name" placeholder="Assumption, e.g. “Summer surge”" maxlength="60">
+      <select id="assume-month"></select>
+      <button id="assume-add">Add assumption</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Average year — weekly search interest</h2>
+    <p class="sub" id="weekly-sub">5-year weekly data averaged into one calendar year.
+      Markers show the latest safe publish date, ramp start, and peak.</p>
+    <div class="chart-box" id="chart-weekly"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Monthly seasonal index — long horizon</h2>
+    <p class="sub">10+ years of monthly data. 100 = the term's own yearly average;
+      140 means that month runs 40% hotter than normal.</p>
+    <div class="chart-box" id="chart-monthly"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Full history &amp; one-off spikes</h2>
+    <p class="sub">Every point we have. Spikes flagged below are one-year events
+      (news, virality) — they are <b>not</b> seasonality and are excluded from the calendar.</p>
+    <div class="chart-box" id="chart-history"></div>
+    <ul class="anom-list" id="anomalies"></ul>
+  </section>
+
+  <section class="panel">
+    <h2>Editorial &amp; campaign calendar</h2>
+    <p class="sub" id="cal-sub"></p>
+    <div style="overflow-x:auto"><table class="cal" id="calendar"></table></div>
+  </section>
+  </div>
+
+  <footer>
+    <b>Method.</b> Seasonal index = month average ÷ overall average × 100, over all years of
+    monthly data. A month is a <b>real peak</b> at index ≥ 115 with the bump present in ≥ 60%
+    of years; 107–115 is a <b>mild bump</b>; elevated months that only appear in a minority of
+    years are <b>inconsistent</b> (usually one viral year). Ramp start = the week the 5-year
+    average weekly curve crosses halfway from baseline (25th percentile) to peak. Lead-time
+    rules: publish SEO content 8–12 weeks before ramp start; start paid 2–4 weeks before peak;
+    cut spend the week after the peak breaks.<br>
+    <b>Budget model.</b> Each month gets a weight of (seasonal index ÷ 100) raised to the
+    concentration exponent, so peaks pull budget super-proportionally. That weight is then
+    shifted to buy <i>ahead</i> of demand: paid spend in a month serves that month and the next
+    (50/50), content spend serves demand three months later. The two envelopes are normalized
+    separately, blended by your content/paid split, and rounded to whole dollars summing exactly
+    to the budget. It allocates a fixed budget across the year — it does not forecast revenue
+    or ROI.<br>
+    <b>Data.</b> Google Trends is a <b>relative index (0–100)</b> within each query — never
+    search volume. Terms downloaded in separate exports are not comparable to each other.
+    Files live in <code>data/</code>, named <code>&lt;category&gt;--monthly.csv</code> /
+    <code>&lt;category&gt;--weekly.csv</code>; rebuild with
+    <code>py analysis/build_site_data.py</code>, or use Import above (browser-only, saved locally).
+  </footer>
+</div>
+
+<dialog id="dlg-import">
+  <h2>Import a Google Trends CSV</h2>
+  <p>Export from <b>trends.google.com/trends/explore</b> → “Interest over time” → ⬇.
+     Use <b>2004–present or a 10+ year custom range</b> for the monthly file and
+     <b>Past 5 years</b> for the weekly file. Granularity is auto-detected.</p>
+  <div class="row">
+    <label>Category</label>
+    <select id="import-cat"></select>
+    <input type="file" id="import-file" accept=".csv,text/csv">
+  </div>
+  <div class="import-summary" id="import-summary" hidden></div>
+  <div class="row" style="justify-content:flex-end">
+    <button id="import-reset" title="Remove all browser-imported data">Reset imports</button>
+    <button id="import-cancel">Cancel</button>
+    <button class="primary" id="import-confirm" disabled>Import</button>
+  </div>
+</dialog>
+
+<dialog id="dlg-help">
+  <h2>Getting the data</h2>
+  <ol>
+    <li>Go to <b>trends.google.com/trends/explore</b>.</li>
+    <li>Enter one search term (use “search term”, not “topic”). Region: United States.</li>
+    <li>Set time to <b>2004–present</b> (or any 10+ year range) → download CSV → import here
+        as the <b>monthly</b> file.</li>
+    <li>Set time to <b>Past 5 years</b> → download CSV → import as the <b>weekly</b> file.</li>
+    <li>Repeat per term. Or save files into <code>data/</code> as
+        <code>births--monthly.csv</code> etc. and run
+        <code>py analysis/build_site_data.py</code>.</li>
+  </ol>
+  <p>Trends numbers are a relative 0–100 index within each query, not search volume.</p>
+  <div class="row" style="justify-content:flex-end"><button id="help-close">Close</button></div>
+</dialog>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script src="data.js"></script>
+<script>
+"use strict";
+/* ================= analysis (mirrors analysis/seasonality.py) ============= */
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const REAL_PEAK_INDEX = 115, MILD_BUMP_INDEX = 107, OFF_SEASON_INDEX = 88,
+      CONSISTENCY_REQUIRED = 0.6, RAMP_FRACTION = 0.5,
+      ANOMALY_Z = 3.5, ANOMALY_ABS_FLOOR = 15, ANOMALY_RATIO = 1.5;
+
+const mean = a => a.reduce((s, v) => s + v, 0) / a.length;
+const median = a => { const s = [...a].sort((x, y) => x - y), m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+
+function parseDates(iso) { return iso.map(s => {
+  const p = s.split("-").map(Number);
+  return new Date(Date.UTC(p[0], p[1] - 1, p[2] || 15)); }); }
+
+function isoWeek(d) {
+  const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  t.setUTCDate(t.getUTCDate() - ((t.getUTCDay() + 6) % 7) + 3);
+  const f = new Date(Date.UTC(t.getUTCFullYear(), 0, 4));
+  f.setUTCDate(f.getUTCDate() - ((f.getUTCDay() + 6) % 7) + 3);
+  return Math.min(1 + Math.round((t - f) / 6048e5), 52);
+}
+
+function monthlyIndex(dates, values) {
+  const byMonth = {}, byYM = {};
+  dates.forEach((d, i) => {
+    const m = d.getUTCMonth() + 1, y = d.getUTCFullYear();
+    (byMonth[m] ??= []).push(values[i]);
+    ((byYM[y] ??= {})[m] ??= []).push(values[i]);
+  });
+  const overall = mean(values), index = {};
+  for (let m = 1; m <= 12; m++) if (byMonth[m]) index[m] = mean(byMonth[m]) / overall * 100;
+  const perYear = {};
+  for (const y in byYM) {
+    const months = byYM[y];
+    if (Object.keys(months).length < 10) continue;   // partial years at range edges
+    const ym = mean(Object.values(months).flat());
+    perYear[y] = {};
+    for (const m in months) perYear[y][m] = mean(months[m]) / ym * 100;
+  }
+  return { index, perYear };
+}
+
+function classifyMonths({ index, perYear }) {
+  const out = {};
+  for (let m = 1; m <= 12; m++) {
+    const idx = index[m];
+    if (idx === undefined) continue;
+    const yrs = Object.keys(perYear).filter(y => perYear[y][m] !== undefined);
+    const peaked = yrs.filter(y => perYear[y][m] >= MILD_BUMP_INDEX);
+    const cons = yrs.length ? peaked.length / yrs.length : 0;
+    let label;
+    if (idx >= REAL_PEAK_INDEX && cons >= CONSISTENCY_REQUIRED) label = "REAL PEAK";
+    else if (idx >= MILD_BUMP_INDEX && cons >= CONSISTENCY_REQUIRED) label = "MILD BUMP";
+    else if (idx >= MILD_BUMP_INDEX) label = "INCONSISTENT";
+    else if (idx <= OFF_SEASON_INDEX) label = "OFF-SEASON";
+    else label = "NO PEAK";
+    out[m] = { index: Math.round(idx * 10) / 10, label, consistency: cons };
+  }
+  return out;
+}
+
+function weeklyCurve(dates, values) {
+  const byWeek = {};
+  dates.forEach((d, i) => (byWeek[isoWeek(d)] ??= []).push(values[i]));
+  const raw = [];
+  for (let w = 1; w <= 52; w++) raw.push(byWeek[w] ? mean(byWeek[w]) : 0);
+  return raw.map((_, i) =>
+    mean([raw[(i + 51) % 52], raw[i], raw[(i + 1) % 52]]));
+}
+
+function rampAndPeak(curve) {
+  let peakI = 0;
+  curve.forEach((v, i) => { if (v > curve[peakI]) peakI = i; });
+  const sorted = [...curve].sort((a, b) => a - b);
+  const baseline = sorted[Math.floor(52 * .25)];
+  const thr = baseline + RAMP_FRACTION * (curve[peakI] - baseline);
+  let rampI = peakI;
+  for (let s = 1; s < 52; s++) {
+    const i = (peakI - s + 52) % 52;
+    if (curve[i] < thr) { rampI = (i + 1) % 52; break; }
+  }
+  return { peakWeek: peakI + 1, rampWeek: rampI + 1,
+           leadWeeks: (peakI - rampI + 52) % 52 };
+}
+
+/* Median+MAD anomaly test (same rationale as the Python version: with one
+   observation per year, a spike inflates a mean/stdev test into never firing). */
+function findAnomalies(dates, values, keyFn) {
+  const byYear = {};
+  dates.forEach((d, i) => (byYear[d.getUTCFullYear()] ??= []).push(values[i]));
+  const overall = mean(values), yearMean = {};
+  for (const y in byYear)
+    yearMean[y] = byYear[y].length >= 6 ? mean(byYear[y]) : overall;
+
+  const groups = {};
+  dates.forEach((d, i) => {
+    const det = yearMean[d.getUTCFullYear()]
+      ? values[i] / yearMean[d.getUTCFullYear()] * overall : values[i];
+    (groups[keyFn(d)] ??= []).push({ d, v: values[i], det });
+  });
+
+  const out = [];
+  for (const k in groups) {
+    const obs = groups[k];
+    if (obs.length < 3) continue;
+    const med = median(obs.map(o => o.det));
+    const mad = median(obs.map(o => Math.abs(o.det - med)));
+    for (const { d, v, det } of obs) {
+      const gap = det - med;
+      if (gap < ANOMALY_ABS_FLOOR || det < ANOMALY_RATIO * med) continue;
+      if (mad > 0 && 0.6745 * gap / mad < ANOMALY_Z) continue;
+      out.push({ date: d, value: v, typical: Math.round(med * 10) / 10 });
+    }
+  }
+  return out.sort((a, b) => a.date - b.date);
+}
+
+const REF_YEAR = 2026;
+function weekToDate(w) {
+  return new Date(Date.UTC(REF_YEAR, 0, 1 + (w - 1) * 7 + 3));
+}
+const fmtWeek = w => { const d = weekToDate(w);
+  return `~${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`; };
+const fmtDate = d => `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
+const fmtMonthYear = d => `${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+const wrapW = w => ((w - 1) % 52 + 52) % 52 + 1;
+
+function analyzeTerm(term) {
+  const a = { name: term.name };
+  if (term.monthly) {
+    const dates = parseDates(term.monthly.dates), vals = term.monthly.values;
+    a.monthly = { dates, vals, source: term.monthly.source,
+      months: classifyMonths(monthlyIndex(dates, vals)),
+      anomalies: findAnomalies(dates, vals, d => d.getUTCMonth() + 1) };
+  }
+  if (term.weekly) {
+    const dates = parseDates(term.weekly.dates), vals = term.weekly.values;
+    const curve = weeklyCurve(dates, vals);
+    a.weekly = { dates, vals, curve, source: term.weekly.source,
+      ...rampAndPeak(curve),
+      anomalies: findAnomalies(dates, vals, isoWeek) };
+  }
+  // Fall back to monthly-derived timing when no weekly file exists.
+  const src = a.weekly ?? null;
+  if (src) {
+    a.timing = { precision: "week", peakWeek: src.peakWeek, rampWeek: src.rampWeek,
+      leadWeeks: src.leadWeeks, publishWeek: wrapW(src.rampWeek - 8),
+      paidWeek: wrapW(src.peakWeek - 3) };
+  } else if (a.monthly) {
+    const idx = a.monthly.months;
+    let peakM = 1;
+    for (let m = 2; m <= 12; m++)
+      if ((idx[m]?.index ?? 0) > (idx[peakM]?.index ?? 0)) peakM = m;
+    a.timing = { precision: "month", peakMonth: peakM,
+      rampMonth: (peakM + 10) % 12 + 1 };   // month before peak
+  }
+  return a;
+}
+
+/* ============================ state & data ================================ */
+const LS_IMPORT = "dc_import_v1", LS_ASSUMED = "dc_assumed_v1", LS_THEME = "dc_theme";
+const store = k => { try { return JSON.parse(localStorage.getItem(k)) || {}; }
+                     catch { return {}; } };
+const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+
+function mergedData() {
+  const overlay = store(LS_IMPORT);
+  return DEMAND_DATA.categories.map(cat => {
+    const terms = cat.terms.map(t => ({ ...t }));
+    const extra = overlay[cat.id] || {};
+    for (const name in extra) {
+      let t = terms.find(x => x.name === name);
+      if (!t) { t = { name }; terms.push(t); }
+      if (extra[name].monthly) t.monthly = extra[name].monthly;
+      if (extra[name].weekly) t.weekly = extra[name].weekly;
+    }
+    return { ...cat, terms };
+  });
+}
+
+let CATS = mergedData();
+let curCat = CATS[0].id;
+const curTerm = {};   // per-category selected term
+const analysisCache = {};
+
+function getAnalysis(catId, termName) {
+  const key = catId + "::" + termName;
+  if (!analysisCache[key]) {
+    const cat = CATS.find(c => c.id === catId);
+    analysisCache[key] = analyzeTerm(cat.terms.find(t => t.name === termName));
+  }
+  return analysisCache[key];
+}
+
+function defaultTerm(cat) {
+  // Most seasonal term (highest monthly index spread) makes the best default view.
+  let best = cat.terms[0].name, bestSpread = -1;
+  for (const t of cat.terms) {
+    const a = getAnalysis(cat.id, t.name);
+    if (!a.monthly) continue;
+    const idxs = Object.values(a.monthly.months).map(m => m.index);
+    const spread = Math.max(...idxs) - Math.min(...idxs);
+    if (spread > bestSpread) { bestSpread = spread; best = t.name; }
+  }
+  return best;
+}
+
+function assumedFor(catId) {
+  const saved = store(LS_ASSUMED);
+  if (saved[catId]) return saved[catId];
+  return CATS.find(c => c.id === catId).assumed || [];
+}
+
+/* ============================== verdicts ================================== */
+function verdictFor(catId, assumption) {
+  const cat = CATS.find(c => c.id === catId);
+  const m = assumption.month;
+  const near = x => Math.min(Math.abs(x - m), 12 - Math.abs(x - m));
+  let confirmed = null, shifted = null, mild = null;
+  for (const t of cat.terms) {
+    const a = getAnalysis(catId, t.name);
+    if (!a.monthly) continue;
+    const months = a.monthly.months;
+    const info = months[m];
+    if (info?.label === "REAL PEAK" && !confirmed)
+      confirmed = { term: t.name, info };
+    for (let x = 1; x <= 12; x++)
+      if (months[x]?.label === "REAL PEAK" && near(x) > 0 && near(x) <= 2
+          && (!shifted || months[x].index > shifted.info.index))
+        shifted = { term: t.name, month: x, info: months[x] };
+    if (info?.label === "MILD BUMP" && !mild) mild = { term: t.name, info };
+  }
+  if (confirmed) return { v: "CONFIRMED", cls: "v-confirmed", glyph: "✓", color: "var(--good)",
+    why: `“${confirmed.term}” peaks in ${MONTHS[m - 1]}: index ${confirmed.info.index}, in ${Math.round(confirmed.info.consistency * 100)}% of years.` };
+  if (shifted) return { v: "MISTIMED", cls: "v-mistimed", glyph: "⇄", color: "var(--warning)",
+    why: `The real peak is ${MONTHS[shifted.month - 1]}, not ${MONTHS[m - 1]} — “${shifted.term}” index ${shifted.info.index} there. Shift the plan.` };
+  if (mild) return { v: "OVERRATED", cls: "v-overrated", glyph: "◐", color: "var(--serious)",
+    why: `Only a mild bump for “${mild.term}” (index ${mild.info.index}). Worth a nod, not a campaign.` };
+  return { v: "BUSTED", cls: "v-busted", glyph: "✕", color: "var(--critical)",
+    why: `No tracked term shows a real ${MONTHS[m - 1]} peak. Stop planning around this.` };
+}
+
+/* ============================ svg helpers ================================= */
+const NS = "http://www.w3.org/2000/svg";
+function el(name, attrs, parent) {
+  const e = document.createElementNS(NS, name);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function niceMax(v) { const s = Math.pow(10, Math.floor(Math.log10(v)));
+  for (const m of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * s >= v) return m * s;
+  return 10 * s; }
+/* Sequential blue ramp (palette steps 100→700). On the dark surface the ramp is
+   reversed so "near normal" still recedes toward the surface and hot reads bright. */
+const RAMP_LIGHT = ["#cde2fb","#b7d3f6","#9ec5f4","#86b6ef","#6da7ec","#5598e7","#3987e5",
+                    "#2a78d6","#256abf","#1c5cab","#184f95","#104281","#0d366b"];
+const RAMP_DARK = [...RAMP_LIGHT].reverse();
+/* Ordinal 4-step scale for campaign phase, held inside the mode's legible band. */
+const PHASE_SCALE_LIGHT = { peak:"#1c5cab", ramp:"#2a78d6", publish:"#5598e7", base:"#86b6ef" };
+const PHASE_SCALE_DARK  = { peak:"#9ec5f4", ramp:"#6da7ec", publish:"#3987e5", base:"#1c5cab" };
+
+const isDark = () => {
+  const t = document.documentElement.dataset.theme;
+  return t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+};
+const ramp = () => isDark() ? RAMP_DARK : RAMP_LIGHT;
+const phaseScale = () => isDark() ? PHASE_SCALE_DARK : PHASE_SCALE_LIGHT;
+
+function luminance(hex) {
+  const c = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map(v => v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4));
+  return .2126 * c[0] + .7152 * c[1] + .0722 * c[2];
+}
+const inkOn = hex => luminance(hex) > 0.35 ? "#0b0b0b" : "#ffffff";
+
+/* Fixed index domain so all four categories are read on one scale. */
+const RAMP_LO = 70, RAMP_HI = 150;
+function rampColor(index) {
+  const r = ramp();
+  const t = Math.max(0, Math.min(1, (index - RAMP_LO) / (RAMP_HI - RAMP_LO)));
+  return r[Math.round(t * (r.length - 1))];
+}
+
+const tooltip = document.getElementById("tooltip");
+function showTip(html, x, y) {
+  tooltip.innerHTML = html; tooltip.style.display = "block";
+  const r = tooltip.getBoundingClientRect();
+  const px = Math.min(x + 14, window.innerWidth - r.width - 10);
+  tooltip.style.left = px + window.scrollX + "px";
+  tooltip.style.top = (y - r.height - 12 + window.scrollY) + "px";
+}
+const hideTip = () => tooltip.style.display = "none";
+
+function axisLeft(svg, yScale, max, w, ml, mt, mb, h, fmt) {
+  const steps = 4;
+  for (let i = 0; i <= steps; i++) {
+    const val = max / steps * i, y = yScale(val);
+    el("line", { x1: ml, x2: w - 10, y1: y, y2: y, stroke: "var(--grid)",
+      "stroke-width": 1 }, svg);
+    el("text", { x: ml - 8, y: y + 4, "text-anchor": "end", fill: "var(--muted)",
+      "font-size": 11, style: "font-variant-numeric:tabular-nums" }, svg)
+      .textContent = fmt ? fmt(val) : Math.round(val);
+  }
+}
+
+/* =========================== chart renderers ============================== */
+function renderWeeklyChart(a) {
+  const box = document.getElementById("chart-weekly");
+  box.innerHTML = "";
+  if (!a.weekly) {
+    box.innerHTML = `<p class="sub">No weekly file imported for this term yet — ramp timing
+      below is month-precision from the monthly data. Import a “Past 5 years” export for
+      week-level dates.</p>`;
+    return;
+  }
+  const { curve } = a.weekly, t = a.timing;
+  const w = Math.max(box.clientWidth || 900, 560), h = 260,
+        ml = 40, mr = 14, mt = 30, mb = 26;
+  const svg = el("svg", { viewBox: `0 0 ${w} ${h}`, role: "img",
+    "aria-label": "Average weekly search interest across the year" });
+  const max = niceMax(Math.max(...curve));
+  const xs = i => ml + i / 51 * (w - ml - mr);
+  const ys = v => mt + (1 - v / max) * (h - mt - mb);
+  axisLeft(svg, ys, max, w, ml, mt, mb, h);
+
+  MONTHS.forEach((mn, i) => {
+    const doy = (Date.UTC(REF_YEAR, i, 1) - Date.UTC(REF_YEAR, 0, 1)) / 864e5;
+    el("text", { x: xs(doy / 7), y: h - 8, fill: "var(--muted)", "font-size": 11 },
+      svg).textContent = mn;
+  });
+
+  // ramp→peak wash
+  const ri = t.rampWeek - 1, pi = t.peakWeek - 1;
+  const washSpan = (from, to) => {
+    el("rect", { x: xs(from), y: mt, width: Math.max(xs(to) - xs(from), 0),
+      height: h - mt - mb, fill: "var(--s1-wash)" }, svg);
+  };
+  if (ri <= pi) washSpan(ri, pi);
+  else { washSpan(ri, 51); washSpan(0, pi); }
+
+  // markers: publish-by, ramp, peak
+  const marker = (week, label, anchor) => {
+    const x = xs(week - 1);
+    el("line", { x1: x, x2: x, y1: mt - 4, y2: h - mb, stroke: "var(--baseline)",
+      "stroke-width": 1 }, svg);
+    el("text", { x: x + (anchor === "end" ? -5 : 5), y: mt - 10, fill: "var(--ink-2)",
+      "font-size": 11, "font-weight": 600,
+      "text-anchor": anchor === "end" ? "end" : "start" }, svg).textContent = label;
+  };
+  marker(t.publishWeek, `Publish by ${fmtWeek(t.publishWeek)}`,
+    t.publishWeek > 40 ? "end" : "start");
+  marker(t.rampWeek, `Ramp ${fmtWeek(t.rampWeek)}`, t.rampWeek > 44 ? "end" : "start");
+
+  // area + line
+  let dArea = `M ${xs(0)} ${ys(0)}`, dLine = "";
+  curve.forEach((v, i) => { dArea += ` L ${xs(i)} ${ys(v)}`;
+    dLine += (i ? " L" : "M") + ` ${xs(i)} ${ys(v)}`; });
+  dArea += ` L ${xs(51)} ${ys(0)} Z`;
+  el("path", { d: dArea, fill: "var(--s1-wash)" }, svg);
+  el("path", { d: dLine, fill: "none", stroke: "var(--s1)", "stroke-width": 2,
+    "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
+
+  // peak dot + label (the one direct label)
+  const px = xs(pi), py = ys(curve[pi]);
+  el("circle", { cx: px, cy: py, r: 6, fill: "var(--s1)", stroke: "var(--surface)",
+    "stroke-width": 2 }, svg);
+  el("text", { x: px, y: py - 12, "text-anchor": "middle", fill: "var(--ink)",
+    "font-size": 11.5, "font-weight": 600 }, svg)
+    .textContent = `Peak ${fmtWeek(t.peakWeek)}`;
+
+  // crosshair + tooltip
+  const cross = el("line", { y1: mt, y2: h - mb, stroke: "var(--baseline)",
+    "stroke-width": 1, visibility: "hidden" }, svg);
+  const dot = el("circle", { r: 5, fill: "var(--s1)", stroke: "var(--surface)",
+    "stroke-width": 2, visibility: "hidden" }, svg);
+  const hit = el("rect", { x: ml, y: mt, width: w - ml - mr, height: h - mt - mb,
+    fill: "transparent" }, svg);
+  hit.addEventListener("mousemove", ev => {
+    const r = svg.getBoundingClientRect();
+    const fx = (ev.clientX - r.left) * (w / r.width);
+    const i = Math.max(0, Math.min(51, Math.round((fx - ml) / (w - ml - mr) * 51)));
+    cross.setAttribute("x1", xs(i)); cross.setAttribute("x2", xs(i));
+    cross.setAttribute("visibility", "visible");
+    dot.setAttribute("cx", xs(i)); dot.setAttribute("cy", ys(curve[i]));
+    dot.setAttribute("visibility", "visible");
+    showTip(`Week ${i + 1} (${fmtWeek(i + 1)})<br>avg interest <b>${curve[i].toFixed(1)}</b>`,
+      ev.clientX, ev.clientY);
+  });
+  hit.addEventListener("mouseleave", () => { hideTip();
+    cross.setAttribute("visibility", "hidden"); dot.setAttribute("visibility", "hidden"); });
+
+  box.appendChild(svg);
+  const rows = curve.map((v, i) =>
+    `<tr><td>Week ${i + 1} (${fmtWeek(i + 1)})</td><td>${v.toFixed(1)}</td></tr>`).join("");
+  box.insertAdjacentHTML("beforeend",
+    `<details class="tbl"><summary>View as table</summary>
+     <table><tr><th>Week</th><th>Avg interest</th></tr>${rows}</table></details>`);
+}
+
+function renderMonthlyChart(a) {
+  const box = document.getElementById("chart-monthly");
+  box.innerHTML = "";
+  if (!a.monthly) {
+    box.innerHTML = `<p class="sub">No monthly (10+ year) file imported for this term yet.</p>`;
+    return;
+  }
+  const months = a.monthly.months;
+  const w = Math.max(box.clientWidth || 900, 560), h = 240,
+        ml = 40, mr = 14, mt = 20, mb = 26;
+  const svg = el("svg", { viewBox: `0 0 ${w} ${h}`, role: "img",
+    "aria-label": "Monthly seasonal index" });
+  const vals = Object.values(months).map(m => m.index);
+  const max = niceMax(Math.max(...vals, 130));
+  const ys = v => mt + (1 - v / max) * (h - mt - mb);
+  axisLeft(svg, ys, max, w, ml, mt, mb, h);
+
+  // reference line at 100
+  el("line", { x1: ml, x2: w - mr, y1: ys(100), y2: ys(100),
+    stroke: "var(--baseline)", "stroke-width": 1 }, svg);
+  el("text", { x: w - mr, y: ys(100) - 5, "text-anchor": "end",
+    fill: "var(--muted)", "font-size": 10.5 }, svg).textContent = "100 = yearly average";
+
+  const band = (w - ml - mr) / 12, bw = Math.min(24, band * .55);
+  let maxM = 1;
+  for (let m = 2; m <= 12; m++)
+    if ((months[m]?.index ?? 0) > (months[maxM]?.index ?? 0)) maxM = m;
+
+  for (let m = 1; m <= 12; m++) {
+    const info = months[m];
+    if (!info) continue;
+    const x = ml + band * (m - 1) + (band - bw) / 2;
+    const y = ys(info.index), bh = Math.max(h - mb - y, 2);
+    const rect = el("path", { d: `M ${x} ${h - mb} V ${y + 4} Q ${x} ${y} ${x + 4} ${y}
+      H ${x + bw - 4} Q ${x + bw} ${y} ${x + bw} ${y + 4} V ${h - mb} Z`,
+      fill: "var(--s1)" }, svg);
+    el("text", { x: x + bw / 2, y: h - 8, "text-anchor": "middle",
+      fill: "var(--muted)", "font-size": 11 }, svg).textContent = MONTHS[m - 1];
+    if (m === maxM)
+      el("text", { x: x + bw / 2, y: y - 6, "text-anchor": "middle", fill: "var(--ink)",
+        "font-size": 11.5, "font-weight": 600,
+        style: "font-variant-numeric:tabular-nums" }, svg).textContent = info.index;
+    rect.addEventListener("mousemove", ev => showTip(
+      `${MONTHS[m - 1]}: index <b>${info.index}</b><br>${info.label} · in ` +
+      `${Math.round(info.consistency * 100)}% of years`, ev.clientX, ev.clientY));
+    rect.addEventListener("mouseleave", hideTip);
+  }
+  box.appendChild(svg);
+  const rows = Object.keys(months).map(m =>
+    `<tr><td>${MONTHS[m - 1]}</td><td>${months[m].index}</td><td>${months[m].label}</td>
+     <td>${Math.round(months[m].consistency * 100)}%</td></tr>`).join("");
+  box.insertAdjacentHTML("beforeend",
+    `<details class="tbl"><summary>View as table</summary>
+     <table><tr><th>Month</th><th>Index</th><th>Label</th><th>Consistency</th></tr>${rows}</table></details>`);
+}
+
+function renderHistoryChart(a) {
+  const box = document.getElementById("chart-history"),
+        list = document.getElementById("anomalies");
+  box.innerHTML = ""; list.innerHTML = "";
+  const src = a.monthly ?? a.weekly;
+  if (!src) { box.innerHTML = `<p class="sub">No data yet.</p>`; return; }
+  const { dates, vals } = src;
+  const anomalies = (a.monthly?.anomalies?.length ? a.monthly.anomalies
+                     : a.weekly?.anomalies) || [];
+  const w = Math.max(box.clientWidth || 900, 560), h = 170,
+        ml = 40, mr = 14, mt = 14, mb = 24;
+  const svg = el("svg", { viewBox: `0 0 ${w} ${h}`, role: "img",
+    "aria-label": "Full search-interest history" });
+  const t0 = +dates[0], t1 = +dates[dates.length - 1];
+  const xs = d => ml + (+d - t0) / (t1 - t0) * (w - ml - mr);
+  const ys = v => mt + (1 - v / 100) * (h - mt - mb);
+  axisLeft(svg, ys, 100, w, ml, mt, mb, h);
+  const y0 = dates[0].getUTCFullYear(), y1 = dates[dates.length - 1].getUTCFullYear();
+  const yearStep = Math.max(1, Math.round((y1 - y0) / 8));
+  for (let y = y0 + 1; y <= y1; y += yearStep) {
+    const x = xs(new Date(Date.UTC(y, 0, 1)));
+    el("text", { x, y: h - 6, "text-anchor": "middle", fill: "var(--muted)",
+      "font-size": 11, style: "font-variant-numeric:tabular-nums" }, svg)
+      .textContent = y;
+  }
+  let d = "";
+  dates.forEach((dt, i) => d += (i ? " L" : "M") + ` ${xs(dt)} ${ys(vals[i])}`);
+  el("path", { d, fill: "none", stroke: "var(--s1)", "stroke-width": 2,
+    "stroke-linejoin": "round" }, svg);
+  for (const an of anomalies)
+    el("circle", { cx: xs(an.date), cy: ys(an.value), r: 5, fill: "var(--anom)",
+      stroke: "var(--surface)", "stroke-width": 2 }, svg);
+
+  const cross = el("line", { y1: mt, y2: h - mb, stroke: "var(--baseline)",
+    "stroke-width": 1, visibility: "hidden" }, svg);
+  const hit = el("rect", { x: ml, y: mt, width: w - ml - mr, height: h - mt - mb,
+    fill: "transparent" }, svg);
+  hit.addEventListener("mousemove", ev => {
+    const r = svg.getBoundingClientRect();
+    const fx = (ev.clientX - r.left) * (w / r.width);
+    let best = 0;
+    dates.forEach((dt, i) => { if (Math.abs(xs(dt) - fx) < Math.abs(xs(dates[best]) - fx)) best = i; });
+    cross.setAttribute("x1", xs(dates[best])); cross.setAttribute("x2", xs(dates[best]));
+    cross.setAttribute("visibility", "visible");
+    const label = a.monthly ? fmtMonthYear(dates[best]) : fmtDate(dates[best]);
+    showTip(`${label}<br>interest <b>${vals[best]}</b>`, ev.clientX, ev.clientY);
+  });
+  hit.addEventListener("mouseleave", () => { hideTip(); cross.setAttribute("visibility", "hidden"); });
+  box.appendChild(svg);
+
+  if (anomalies.length)
+    list.innerHTML = anomalies.map(an =>
+      `<li><span class="anom-ico">⚠</span> <b>${a.monthly ? fmtMonthYear(an.date) : fmtDate(an.date)}</b>
+       hit ${an.value} vs a typical ${an.typical} — one-off spike, excluded from the calendar.</li>`).join("");
+  else
+    list.innerHTML = `<li style="color:var(--muted)">No one-off spikes detected.</li>`;
+}
+
+/* =========================== calendar table =============================== */
+const PHASE_META = {
+  publish: { label: "Publish window", cls: "p-publish",
+    ed: t => `Publish SEO pillar pages &amp; guides targeting “${t}” now — they need 8–12 weeks to rank before demand arrives.`,
+    camp: () => `No spend. Build retargeting audiences; refresh landing pages.` },
+  ramp: { label: "Ramp", cls: "p-ramp",
+    ed: t => `Ship supporting posts, email series, and social around “${t}”; refresh top pages.`,
+    camp: () => `Warm email/social pushes; soft-launch paid 2–4 weeks before the peak.` },
+  peak: { label: "PEAK", cls: "p-peak",
+    ed: () => `Conversion-focused content only: comparisons, FAQs, offers.`,
+    camp: () => `Full paid spend, monitored daily. Capture, don't educate.` },
+  cool: { label: "Cool-down", cls: "p-cool",
+    ed: () => `Wrap-ups and testimonials; harvest UGC while it's fresh.`,
+    camp: () => `Cut spend fast — interest falls quicker than it rose. Retargeting only.` },
+  second: { label: "Secondary bump", cls: "p-second",
+    ed: t => `Lighter rerun of the peak playbook for “${t}”.`,
+    camp: () => `Modest paid flight sized to the bump's index.` },
+  off: { label: "Off-season", cls: "p-off",
+    ed: () => `Evergreen content, refreshes, link building; plan the next cycle.`,
+    camp: () => `Minimal always-on brand spend.` },
+  steady: { label: "Steady", cls: "p-steady",
+    ed: () => `Maintain cadence on evergreen topics.`,
+    camp: () => `Efficiency-focused always-on spend.` },
+};
+
+function monthOfWeek(w) { return weekToDate(w).getUTCMonth() + 1; }
+
+function buildPhases(a) {
+  const phases = {};
+  for (let m = 1; m <= 12; m++) phases[m] = "steady";
+  const months = a.monthly?.months || {};
+  for (let m = 1; m <= 12; m++)
+    if (months[m]?.label === "OFF-SEASON") phases[m] = "off";
+  const t = a.timing;
+  if (!t) return phases;
+  const paint = (fromW, toW, phase) => {   // inclusive weeks, circular
+    for (let s = 0; s <= (toW - fromW + 52) % 52; s++)
+      phases[monthOfWeek(wrapW(fromW + s))] = phase;
+  };
+  if (t.precision === "week") {
+    paint(wrapW(t.peakWeek + 1), wrapW(t.peakWeek + 4), "cool");
+    paint(wrapW(t.rampWeek - 12), wrapW(t.rampWeek - 1), "publish");
+    paint(t.rampWeek, wrapW(t.peakWeek - 1), "ramp");
+    phases[monthOfWeek(t.peakWeek)] = "peak";
+  } else {
+    phases[t.peakMonth] = "peak";
+    phases[t.rampMonth] = "ramp";
+    phases[(t.rampMonth + 10) % 12 + 1] = "publish";
+    phases[t.peakMonth % 12 + 1] = "cool";
+  }
+  // Months that peak in the monthly data but sit outside the main ramp→peak arc.
+  // A month inside the cool-down window that is itself a real peak is a second
+  // peak, not a fade — calling it cool-down would cut spend during live demand.
+  for (let m = 1; m <= 12; m++) {
+    const label = months[m]?.label;
+    if (["REAL PEAK", "MILD BUMP"].includes(label)
+        && ["steady", "off"].includes(phases[m])) phases[m] = "second";
+    else if (label === "REAL PEAK" && phases[m] === "cool") phases[m] = "second";
+  }
+  return phases;
+}
+
+function renderCalendar(a, catLabel) {
+  const tbl = document.getElementById("calendar");
+  document.getElementById("cal-sub").innerHTML =
+    `What to do each month for <b>${catLabel}</b> (term: “${a.name}”). Every row traces to
+     the numbers above — phase from ramp/peak timing, index from the long-horizon data.`;
+  const months = a.monthly?.months || {};
+  const phases = buildPhases(a);
+  let html = `<tr><th>Month</th><th>Phase</th><th style="text-align:right">Index</th>
+    <th>Signal</th><th>Editorial — what to publish</th><th>Campaign — where money goes</th></tr>`;
+  for (let m = 1; m <= 12; m++) {
+    const p = PHASE_META[phases[m]], info = months[m];
+    html += `<tr>
+      <td><b>${MONTHS[m - 1]}</b></td>
+      <td><span class="phase ${p.cls}">${p.label}</span></td>
+      <td class="num">${info ? info.index : "—"}</td>
+      <td style="font-size:12px;color:var(--ink-2)">${info ? info.label +
+        (info.consistency ? ` · ${Math.round(info.consistency * 100)}% of yrs` : "") : "—"}</td>
+      <td>${p.ed(a.name)}</td>
+      <td>${p.camp()}</td></tr>`;
+  }
+  tbl.innerHTML = html;
+}
+
+/* ========================== overview (home tab) =========================== */
+function overviewRows() {
+  return CATS.map(cat => {
+    const term = defaultTerm(cat);
+    return { cat, term, a: getAnalysis(cat.id, term) };
+  });
+}
+
+function renderOverviewChart(rows) {
+  const box = document.getElementById("chart-overview");
+  box.innerHTML = "";
+  const w = Math.max(box.clientWidth || 900, 620),
+        ml = 126, mr = 12, mt = 22, rowH = 50, cellH = 38;
+  const h = mt + rows.length * rowH + 4;
+  const svg = el("svg", { viewBox: `0 0 ${w} ${h}`, role: "img",
+    "aria-label": "Monthly search-interest heatmap for all four categories" });
+  const band = (w - ml - mr) / 12;
+
+  MONTHS.forEach((mn, i) => {
+    el("text", { x: ml + band * i + band / 2, y: mt - 8, "text-anchor": "middle",
+      fill: "var(--muted)", "font-size": 11 }, svg).textContent = mn;
+  });
+
+  rows.forEach((row, r) => {
+    const months = row.a.monthly?.months || {};
+    const yTop = mt + r * rowH + (rowH - cellH) / 2;
+    el("text", { x: 0, y: yTop + 16, fill: "var(--ink)", "font-size": 13,
+      "font-weight": 600 }, svg).textContent = row.cat.label;
+    el("text", { x: 0, y: yTop + 31, fill: "var(--muted)", "font-size": 11 }, svg)
+      .textContent = `“${row.term}”`;
+
+    let peakM = 1;
+    for (let m = 2; m <= 12; m++)
+      if ((months[m]?.index ?? 0) > (months[peakM]?.index ?? 0)) peakM = m;
+
+    for (let m = 1; m <= 12; m++) {
+      const info = months[m];
+      const x = ml + band * (m - 1) + 1, cw = band - 2;
+      const fill = info ? rampColor(info.index) : "var(--chip-off)";
+      const cell = el("rect", { x, y: yTop, width: cw, height: cellH, rx: 4,
+        fill }, svg);
+      if (!info) continue;
+      const strong = ["REAL PEAK", "MILD BUMP"].includes(info.label);
+      if (strong) {
+        el("text", { x: x + cw / 2, y: yTop + cellH / 2 + 4, "text-anchor": "middle",
+          fill: inkOn(fill), "font-size": 11, "font-weight": 600,
+          style: "font-variant-numeric:tabular-nums" }, svg)
+          .textContent = Math.round(info.index);
+      }
+      if (m === peakM) {
+        // Filled marker only for a peak that survives the reality test; a hollow
+        // one says "this is the year's high point, but it isn't a real peak".
+        const real = info.label === "REAL PEAK";
+        el("path", { d: `M ${x + cw / 2 - 5} ${yTop - 3} L ${x + cw / 2 + 5} ${yTop - 3}
+          L ${x + cw / 2} ${yTop - 11} Z`,
+          fill: real ? "var(--ink-2)" : "none",
+          stroke: real ? "none" : "var(--muted)", "stroke-width": 1.5 }, svg);
+      }
+      cell.addEventListener("mousemove", ev => showTip(
+        `<b>${row.cat.label}</b> — ${MONTHS[m - 1]}<br>“${row.term}” index ` +
+        `<b>${info.index}</b><br>${info.label} · in ${Math.round(info.consistency * 100)}% of years`,
+        ev.clientX, ev.clientY));
+      cell.addEventListener("mouseleave", hideTip);
+    }
+  });
+  box.appendChild(svg);
+
+  const r = ramp();
+  document.getElementById("ov-ramp").style.background =
+    `linear-gradient(90deg, ${r.join(",")})`;
+
+  const rowsHtml = rows.map(row => {
+    const t = row.a.timing, months = row.a.monthly?.months || {};
+    let peakM = 1;
+    for (let m = 2; m <= 12; m++)
+      if ((months[m]?.index ?? 0) > (months[peakM]?.index ?? 0)) peakM = m;
+    const info = months[peakM];
+    const key = rampColor(info?.index ?? 100);
+    const peakTxt = t?.precision === "week" ? fmtWeek(t.peakWeek) : MONTHS[peakM - 1];
+    const rampTxt = t ? (t.precision === "week" ? fmtWeek(t.rampWeek)
+                                                : MONTHS[t.rampMonth - 1]) : "—";
+    const pubTxt = t ? (t.precision === "week" ? fmtWeek(t.publishWeek)
+                                               : MONTHS[(t.rampMonth + 9) % 12]) : "—";
+    return `<tr>
+      <td><span class="dotkey" style="background:${key}"></span><b>${row.cat.label}</b></td>
+      <td style="color:var(--ink-2)">“${row.term}”</td>
+      <td class="num">${peakTxt}</td>
+      <td class="num">${rampTxt}</td>
+      <td class="num">${pubTxt}</td>
+      <td class="num">${info ? info.index : "—"}</td>
+      <td style="font-size:12px;color:var(--ink-2)">${info ? info.label : "—"}</td></tr>`;
+  }).join("");
+  document.getElementById("keydates").innerHTML =
+    `<tr><th>Category</th><th>Headline term</th><th>Peak</th><th>Ramp starts</th>
+     <th>SEO publish by</th><th>Peak index</th><th>Strength</th></tr>${rowsHtml}`;
+}
+
+function renderScoreboard() {
+  const counts = { CONFIRMED: 0, MISTIMED: 0, OVERRATED: 0, BUSTED: 0 };
+  const cards = [];
+  for (const cat of CATS)
+    for (const as of assumedFor(cat.id)) {
+      const v = verdictFor(cat.id, as);
+      counts[v.v]++;
+      cards.push(`<div class="verdict ${v.cls}">
+        <span class="glyph" style="color:${v.color}">${v.glyph}</span>
+        <div><span class="name">${as.name}</span>
+          <span style="font-size:12px;color:var(--muted)"> · ${cat.label} · ${MONTHS[as.month - 1]}</span>
+          <span class="chip">${v.glyph} ${v.v}</span>
+          <div class="why">${v.why}</div></div></div>`);
+    }
+  const meta = { CONFIRMED: ["var(--good)", "peaks that hold up"],
+    MISTIMED: ["var(--warning)", "real, but wrong month"],
+    OVERRATED: ["var(--serious)", "a bump, not a peak"],
+    BUSTED: ["var(--critical)", "no peak in the data"] };
+  document.getElementById("scoreboard").innerHTML = Object.keys(counts).map(k =>
+    `<div class="score"><div class="n" style="color:${meta[k][0]}">${counts[k]}</div>
+     <div class="k"><b>${k}</b> — ${meta[k][1]}</div></div>`).join("");
+  document.getElementById("all-verdicts").innerHTML = cards.length ? cards.join("") :
+    `<p class="sub" style="margin:0">No assumptions recorded yet.</p>`;
+}
+
+function renderOverview() {
+  const rows = overviewRows();
+  const sample = rows.some(r =>
+    [r.a.monthly?.source, r.a.weekly?.source].filter(Boolean)
+      .some(s => s.startsWith("SAMPLE")));
+  const banner = document.getElementById("sample-banner");
+  banner.hidden = !sample;
+  if (sample) document.getElementById("sample-msg").textContent =
+    "One or more categories are still showing synthetic series.";
+  renderOverviewChart(rows);
+  renderScoreboard();
+}
+
+/* ============================ budget planner ============================== */
+const ROLES = [
+  { id: "wedding-planner", label: "Wedding planner", cat: "marriages", budget: 100000, mix: 35 },
+  { id: "venue", label: "Wedding venue or caterer", cat: "marriages", budget: 250000, mix: 30 },
+  { id: "jeweler", label: "Jeweler / engagement rings", cat: "marriages", budget: 500000, mix: 25 },
+  { id: "family-law", label: "Family law attorney", cat: "divorces", budget: 120000, mix: 45 },
+  { id: "mediator", label: "Divorce mediation practice", cat: "divorces", budget: 60000, mix: 50 },
+  { id: "urology", label: "Urology clinic (vasectomy)", cat: "vasectomies", budget: 80000, mix: 40 },
+  { id: "mens-health", label: "Men's health telehealth", cat: "vasectomies", budget: 400000, mix: 35 },
+  { id: "obgyn", label: "OB-GYN or fertility clinic", cat: "births", budget: 150000, mix: 45 },
+  { id: "baby-brand", label: "Baby & maternity brand", cat: "births", budget: 1000000, mix: 30 },
+  { id: "custom", label: "Something else — I'll pick the category", cat: "marriages",
+    budget: 250000, mix: 35 },
+];
+const LS_BUDGET = "dc_budget_v1";
+const wrapM = m => ((m - 1) % 12 + 12) % 12 + 1;
+const fmtMoney = n => "$" + Math.round(n).toLocaleString("en-US");
+const fmtCompact = n => n >= 1e6 ? "$" + (n / 1e6).toFixed(n % 1e6 ? 1 : 0) + "M"
+  : n >= 1e3 ? "$" + Math.round(n / 1e3) + "K" : "$" + Math.round(n);
+const pct = f => (f * 100).toFixed(1) + "%";
+
+function budgetState() {
+  const s = store(LS_BUDGET);
+  const role = ROLES.find(r => r.id === s.role) || ROLES[0];
+  return { role: role.id, cat: s.cat || role.cat,
+    budget: Number.isFinite(s.budget) ? s.budget : role.budget,
+    mix: Number.isFinite(s.mix) ? s.mix : role.mix,
+    conc: Number.isFinite(s.conc) ? s.conc : 25 };
+}
+
+function allocate(months, budget, contentShare, gamma) {
+  const idx = m => months[wrapM(m)]?.index ?? 100;
+  const w = m => Math.pow(Math.max(idx(m), 1) / 100, gamma);
+  const paidRaw = [], contRaw = [];
+  for (let m = 1; m <= 12; m++) {
+    paidRaw.push(0.5 * w(m) + 0.5 * w(m + 1));   // paid leads demand by ~2–4 weeks
+    contRaw.push(w(m + 3));                       // content ranks ~3 months later
+  }
+  const norm = arr => { const s = arr.reduce((a, b) => a + b, 0); return arr.map(v => v / s); };
+  const p = norm(paidRaw), c = norm(contRaw), paidShare = 1 - contentShare;
+  const fracs = [], dollars = [];
+  for (let i = 0; i < 12; i++) {
+    const f = paidShare * p[i] + contentShare * c[i];
+    fracs.push(f); dollars.push(Math.round(f * budget));
+  }
+  const diff = budget - dollars.reduce((a, b) => a + b, 0);   // keep the sum exact
+  if (diff !== 0) {
+    let mi = 0;
+    dollars.forEach((v, i) => { if (v > dollars[mi]) mi = i; });
+    dollars[mi] += diff;
+  }
+  return { fracs, dollars, paid: p, content: c, paidShare, contentShare };
+}
+
+const PHASE_BUCKET = { peak: "peak", ramp: "ramp", second: "ramp", publish: "publish",
+  cool: "base", off: "base", steady: "base" };
+const BUCKET_LABEL = { peak: "Peak — heaviest flight", ramp: "Pre-peak ramp or second bump",
+  publish: "Publish window (content)", base: "Cool-down, off-season & always-on" };
+
+function reasonFor(m, alloc, months, phases) {
+  const i = m - 1;
+  const idxOf = mm => Math.round(months[wrapM(mm)]?.index ?? 100);
+  const cPart = alloc.contentShare * alloc.content[i];
+  const pPart = alloc.paidShare * alloc.paid[i];
+  const served = idxOf(m + 1) > idxOf(m) ? m + 1 : m;
+  let lead;
+  switch (phases[m]) {
+    case "peak": lead = `Peak demand (index ${idxOf(m)}). Heaviest paid flight of the year — capture intent, don't educate.`; break;
+    case "ramp": lead = `Demand climbing. Dollars placed now land ahead of ${MONTHS[wrapM(served) - 1]} (index ${idxOf(served)}).`; break;
+    case "publish": lead = `Publish window. Pages shipped now have time to rank before ${MONTHS[wrapM(m + 3) - 1]} demand (index ${idxOf(m + 3)}).`; break;
+    case "cool": lead = `Post-peak cool-down (index ${idxOf(m)}). Interest falls faster than it rose — harvest, then cut.`; break;
+    case "second": lead = `Secondary bump (index ${idxOf(m)}). Lighter rerun of the peak playbook.`; break;
+    case "off": lead = `Off-season (index ${idxOf(m)}). Always-on floor only; use the quiet for evergreen work.`; break;
+    default: lead = `Steady demand (index ${idxOf(m)}). Efficiency spend.`;
+  }
+  const tot = cPart + pPart;
+  const split = tot > 0 && cPart > pPart
+    ? `Content-led: ${pct(cPart / tot)} of this month's dollars.`
+    : `Paid-led: ${tot > 0 ? pct(pPart / tot) : "0%"} of this month's dollars.`;
+  return `${lead} ${split}`;
+}
+
+function renderBudgetChart(alloc, phases) {
+  const box = document.getElementById("chart-budget");
+  box.innerHTML = "";
+  const w = Math.max(box.clientWidth || 900, 560), h = 260,
+        ml = 58, mr = 14, mt = 28, mb = 26;
+  const svg = el("svg", { viewBox: `0 0 ${w} ${h}`, role: "img",
+    "aria-label": "Recommended marketing spend by month" });
+  const max = niceMax(Math.max(1, Math.max(...alloc.dollars) * 1.12));
+  const ys = v => mt + (1 - v / max) * (h - mt - mb);
+  axisLeft(svg, ys, max, w, ml, mt, mb, h, fmtCompact);
+
+  const band = (w - ml - mr) / 12, bw = Math.min(24, band * .58);
+  const scale = phaseScale();
+  const top3 = [...alloc.dollars.keys()]
+    .sort((a, b) => alloc.dollars[b] - alloc.dollars[a]).slice(0, 3);
+
+  for (let m = 1; m <= 12; m++) {
+    const i = m - 1, v = alloc.dollars[i];
+    const bucket = PHASE_BUCKET[phases[m]] || "base", fill = scale[bucket];
+    const x = ml + band * i + (band - bw) / 2, y = ys(v);
+    const bar = el("path", { d: `M ${x} ${h - mb} V ${y + 4} Q ${x} ${y} ${x + 4} ${y}
+      H ${x + bw - 4} Q ${x + bw} ${y} ${x + bw} ${y + 4} V ${h - mb} Z`, fill }, svg);
+    el("text", { x: x + bw / 2, y: h - 8, "text-anchor": "middle", fill: "var(--muted)",
+      "font-size": 11 }, svg).textContent = MONTHS[i];
+    if (top3.includes(i))
+      el("text", { x: x + bw / 2, y: y - 7, "text-anchor": "middle", fill: "var(--ink)",
+        "font-size": 11.5, "font-weight": 600 }, svg).textContent = fmtCompact(v);
+    bar.addEventListener("mousemove", ev => showTip(
+      `<b>${MONTHS[i]}</b> — ${fmtMoney(v)}<br>${pct(alloc.fracs[i])} of budget · ` +
+      `${BUCKET_LABEL[bucket]}`, ev.clientX, ev.clientY));
+    bar.addEventListener("mouseleave", hideTip);
+  }
+  box.appendChild(svg);
+
+  document.getElementById("budget-legend").innerHTML = Object.keys(BUCKET_LABEL).map(k =>
+    `<span class="key"><span class="dotkey" style="background:${scale[k]}"></span>
+     ${BUCKET_LABEL[k]}</span>`).join("");
+
+  const rows = alloc.dollars.map((v, i) =>
+    `<tr><td>${MONTHS[i]}</td><td>${fmtMoney(v)}</td><td>${pct(alloc.fracs[i])}</td></tr>`).join("");
+  box.insertAdjacentHTML("beforeend",
+    `<details class="tbl"><summary>View as table</summary>
+     <table><tr><th>Month</th><th>Spend</th><th>Share</th></tr>${rows}</table></details>`);
+}
+
+let lastPlan = null;   // for CSV export
+
+function renderBudget() {
+  const st = budgetState();
+  const role = ROLES.find(r => r.id === st.role);
+  const catId = role.id === "custom" ? st.cat : role.cat;
+  const cat = CATS.find(c => c.id === catId) || CATS[0];
+  const term = defaultTerm(cat);
+  const a = getAnalysis(cat.id, term);
+  const months = a.monthly?.months || {};
+  const phases = buildPhases(a);
+  const contentShare = st.mix / 100, gamma = st.conc / 10;
+  const alloc = allocate(months, st.budget, contentShare, gamma);
+
+  // controls reflect state
+  document.getElementById("role").value = role.id;
+  document.getElementById("field-cat").hidden = role.id !== "custom";
+  document.getElementById("budget-cat").value = catId;
+  const bEl = document.getElementById("budget");
+  if (document.activeElement !== bEl)   // don't fight the caret while typing
+    bEl.value = st.budget.toLocaleString("en-US");
+  document.getElementById("mix").value = st.mix;
+  document.getElementById("conc").value = st.conc;
+  document.getElementById("mix-val").textContent = st.mix + "%";
+  document.getElementById("conc-val").textContent =
+    gamma <= 1.5 ? "Even" : gamma <= 2.5 ? "Balanced" : gamma <= 3.2 ? "Aggressive"
+      : "All-in on peaks";
+
+  const srcSample = [a.monthly?.source, a.weekly?.source].filter(Boolean)
+    .some(s => s.startsWith("SAMPLE"));
+  const banner = document.getElementById("sample-banner");
+  banner.hidden = !srcSample;
+  if (srcSample) document.getElementById("sample-msg").textContent =
+    `The ${cat.label} series behind this plan is synthetic.`;
+
+  let peakM = 1;
+  for (let m = 2; m <= 12; m++)
+    if ((months[m]?.index ?? 0) > (months[peakM]?.index ?? 0)) peakM = m;
+  const t = a.timing;
+  document.getElementById("role-note").innerHTML =
+    `As a <b>${role.label.toLowerCase()}</b>, your demand is <b>${cat.label.toLowerCase()}</b>, ` +
+    `read through “${term}”. Search interest peaks in <b>${MONTHS[peakM - 1]}</b>` +
+    (t?.precision === "week" ? ` (${fmtWeek(t.peakWeek)})` : "") +
+    `, so the plan below front-loads spend into the months <i>before</i> that — ` +
+    `content earliest, paid latest.`;
+
+  const bestI = alloc.dollars.indexOf(Math.max(...alloc.dollars));
+  const worstI = alloc.dollars.indexOf(Math.min(...alloc.dollars));
+  document.getElementById("budget-h").textContent =
+    `${fmtMoney(st.budget)} across the ${cat.label.toLowerCase()} year`;
+  document.getElementById("budget-sub").innerHTML =
+    `Biggest month is <b>${MONTHS[bestI]}</b> at ${fmtMoney(alloc.dollars[bestI])} ` +
+    `(${pct(alloc.fracs[bestI])}); leanest is <b>${MONTHS[worstI]}</b> at ` +
+    `${fmtMoney(alloc.dollars[worstI])}. Bars are colored by campaign phase.`;
+
+  // quarter tiles
+  const qf = [0, 1, 2, 3].map(k =>
+    alloc.fracs.slice(k * 3, k * 3 + 3).reduce((x, y) => x + y, 0));
+  const q = [0, 1, 2, 3].map(k =>
+    alloc.dollars.slice(k * 3, k * 3 + 3).reduce((x, y) => x + y, 0));
+  document.getElementById("qtiles").innerHTML = q.map((v, k) =>
+    `<div class="tile"><div class="lbl">Q${k + 1} · ${MONTHS[k * 3]}–${MONTHS[k * 3 + 2]}</div>
+     <div class="val">${fmtCompact(v)}</div>
+     <div class="note">${pct(qf[k])} of budget</div></div>`).join("");
+
+  renderBudgetChart(alloc, phases);
+
+  const scale = phaseScale();
+  let html = `<tr><th>Month</th><th>Phase</th><th style="text-align:right">Share</th>
+    <th style="text-align:right">Spend</th><th style="text-align:right">Index</th>
+    <th>Why this number</th></tr>`;
+  const csv = [["Month", "Phase", "Share", "Spend (USD)", "Seasonal index", "Rationale"]];
+  for (let m = 1; m <= 12; m++) {
+    const i = m - 1, bucket = PHASE_BUCKET[phases[m]] || "base";
+    const why = reasonFor(m, alloc, months, phases);
+    const idx = months[m] ? months[m].index : "—";
+    html += `<tr class="${phases[m] === "peak" ? "is-peak" : ""}">
+      <td><b>${MONTHS[i]}</b></td>
+      <td><span class="dotkey" style="background:${scale[bucket]}"></span>
+        <span style="font-size:12px">${PHASE_META[phases[m]].label}</span></td>
+      <td class="num">${pct(alloc.fracs[i])}</td>
+      <td class="num"><b>${fmtMoney(alloc.dollars[i])}</b></td>
+      <td class="num">${idx}</td>
+      <td style="font-size:12.5px;color:var(--ink-2)">${why}</td></tr>`;
+    csv.push([MONTHS[i], PHASE_META[phases[m]].label, pct(alloc.fracs[i]),
+      alloc.dollars[i], idx, why]);
+  }
+  html += `<tfoot><tr><td>Total</td><td></td><td class="num">100.0%</td>
+    <td class="num">${fmtMoney(st.budget)}</td><td></td>
+    <td style="font-weight:400;font-size:12px;color:var(--muted)">
+    ${cat.label} · “${term}” · ${role.label}</td></tr></tfoot>`;
+  document.getElementById("alloc-table").innerHTML = html;
+  lastPlan = { csv, name: `demand-calendar-${cat.id}-${role.id}.csv` };
+}
+
+/* ============================== top-level UI ============================== */
+function renderTiles(a) {
+  const box = document.getElementById("tiles");
+  const t = a.timing;
+  if (!t) { box.innerHTML = ""; return; }
+  const tile = (lbl, val, note) => `<div class="tile"><div class="lbl">${lbl}</div>
+    <div class="val">${val}</div><div class="note">${note}</div></div>`;
+  if (t.precision === "week") {
+    box.innerHTML =
+      tile("Peak demand", fmtWeek(t.peakWeek), `week ${t.peakWeek} — plan backwards from here`) +
+      tile("Ramp starts", fmtWeek(t.rampWeek), `${t.leadWeeks} weeks of build-up before the peak`) +
+      tile("SEO publish-by", fmtWeek(t.publishWeek), "8 weeks before ramp — last safe date to publish") +
+      tile("Paid launch", fmtWeek(t.paidWeek), "2–4 weeks before peak; cut right after it breaks");
+  } else {
+    box.innerHTML =
+      tile("Peak demand", MONTHS[t.peakMonth - 1], "month-level (no weekly file yet)") +
+      tile("Ramp starts", MONTHS[t.rampMonth - 1], "month before the peak") +
+      tile("SEO publish-by", MONTHS[(t.rampMonth + 9) % 12], "≈2 months before ramp") +
+      tile("Paid launch", MONTHS[(t.peakMonth + 10) % 12], "≈1 month before peak");
+  }
+}
+
+function renderVerdicts(catId) {
+  const box = document.getElementById("verdicts");
+  const list = assumedFor(catId);
+  box.innerHTML = list.length ? "" :
+    `<p class="sub" style="margin:0">No assumptions yet — add the peaks your plan counts on.</p>`;
+  list.forEach((as, i) => {
+    const v = verdictFor(catId, as);
+    box.insertAdjacentHTML("beforeend",
+      `<div class="verdict ${v.cls}">
+         <span class="glyph" style="color:${v.color}">${v.glyph}</span>
+         <div><span class="name">${as.name}</span>
+           <span class="sub" style="font-size:12px;color:var(--muted)">(${MONTHS[as.month - 1]})</span>
+           <span class="chip">${v.glyph} ${v.v}</span>
+           <div class="why">${v.why}</div></div>
+         <button class="rm" title="Remove" data-i="${i}">×</button>
+       </div>`);
+  });
+  box.querySelectorAll(".rm").forEach(b => b.addEventListener("click", () => {
+    const saved = store(LS_ASSUMED);
+    saved[catId] = assumedFor(catId).filter((_, j) => j !== +b.dataset.i);
+    save(LS_ASSUMED, saved); renderAll();
+  }));
+}
+
+function renderSampleBanner(cat, a) {
+  const srcs = [a.monthly?.source, a.weekly?.source].filter(Boolean);
+  const sample = srcs.some(s => s.startsWith("SAMPLE"));
+  const banner = document.getElementById("sample-banner");
+  banner.hidden = !sample;
+  if (sample) document.getElementById("sample-msg").textContent =
+    `“${a.name}” (${cat.label}) is showing synthetic series.`;
+}
+
+let curView = "overview";   // "overview" | "category" | "budget"
+
+function renderTabs() {
+  const tabs = document.getElementById("tabs");
+  tabs.innerHTML = "";
+  const add = (label, selected, onClick) => {
+    const b = document.createElement("button");
+    b.textContent = label; b.setAttribute("role", "tab");
+    b.setAttribute("aria-selected", selected);
+    b.addEventListener("click", onClick);
+    tabs.appendChild(b);
+  };
+  add("Overview", curView === "overview", () => { curView = "overview"; renderAll(); });
+  for (const c of CATS)
+    add(c.label, curView === "category" && c.id === curCat,
+      () => { curView = "category"; curCat = c.id; renderAll(); });
+  add("Budget planner", curView === "budget", () => { curView = "budget"; renderAll(); });
+}
+
+function renderAll() {
+  renderTabs();
+  document.getElementById("view-overview").hidden = curView !== "overview";
+  document.getElementById("view-category").hidden = curView !== "category";
+  document.getElementById("view-budget").hidden = curView !== "budget";
+  if (curView === "overview") return renderOverview();
+  if (curView === "budget") return renderBudget();
+  renderCategoryView();
+}
+
+function renderCategoryView() {
+  const cat = CATS.find(c => c.id === curCat);
+  // term chips
+  if (!curTerm[cat.id]) curTerm[cat.id] = defaultTerm(cat);
+  const terms = document.getElementById("terms");
+  terms.innerHTML = `<span class="lbl">Term:</span>`;
+  for (const t of cat.terms) {
+    const b = document.createElement("button");
+    b.textContent = t.name;
+    b.setAttribute("aria-pressed", t.name === curTerm[cat.id]);
+    b.addEventListener("click", () => { curTerm[cat.id] = t.name; renderAll(); });
+    terms.appendChild(b);
+  }
+  const a = getAnalysis(cat.id, curTerm[cat.id]);
+  const prov = [];
+  if (a.monthly) prov.push(`Monthly: ${a.monthly.source} (${a.monthly.dates.length} pts, ` +
+    `${a.monthly.dates[0].getUTCFullYear()}–${a.monthly.dates.at(-1).getUTCFullYear()})`);
+  if (a.weekly) prov.push(`Weekly: ${a.weekly.source} (${a.weekly.dates.length} pts)`);
+  document.getElementById("provenance").textContent = prov.join("  ·  ");
+
+  renderSampleBanner(cat, a);
+  renderTiles(a);
+  renderVerdicts(cat.id);
+  renderWeeklyChart(a);
+  renderMonthlyChart(a);
+  renderHistoryChart(a);
+  renderCalendar(a, cat.label);
+}
+
+/* ========================== import / dialogs ============================== */
+function parseTrendsCSVText(text) {
+  const lines = text.split(/\r?\n/);
+  const hi = lines.findIndex(l => /^(Week|Day|Month),/.test(l));
+  if (hi < 0) throw new Error("Not a Google Trends export — no Week/Day/Month header found.");
+  const kind = lines[hi].split(",")[0];
+  if (kind === "Day") throw new Error(
+    "Daily export detected. Use “Past 5 years” (weekly) or a 10+ year range (monthly).");
+  const termNames = lines[hi].split(",").slice(1)
+    .map(c => c.split(":")[0].trim()).filter(Boolean);
+  const dates = [], cols = termNames.map(() => []);
+  for (const line of lines.slice(hi + 1)) {
+    if (!line.trim()) continue;
+    const cells = line.split(",");
+    dates.push(cells[0].trim());
+    cells.slice(1).forEach((c, i) => {
+      if (i < cols.length)
+        cols[i].push(c.trim() === "<1" ? 0.5 : parseFloat(c) || 0);
+    });
+  }
+  return { granularity: kind === "Month" ? "monthly" : "weekly",
+    terms: termNames.map((n, i) => ({ name: n, dates, values: cols[i] })) };
+}
+
+let pendingImport = null;
+function wireDialogs() {
+  const dlg = document.getElementById("dlg-import");
+  const catSel = document.getElementById("import-cat");
+  catSel.innerHTML = CATS.map(c => `<option value="${c.id}">${c.label}</option>`).join("");
+  document.getElementById("btn-import").addEventListener("click", () => {
+    catSel.value = curCat; dlg.showModal(); });
+  document.getElementById("import-cancel").addEventListener("click", () => dlg.close());
+  document.getElementById("import-file").addEventListener("change", async ev => {
+    const f = ev.target.files[0];
+    const sum = document.getElementById("import-summary");
+    if (!f) return;
+    try {
+      const parsed = parseTrendsCSVText(await f.text());
+      pendingImport = { parsed, fileName: f.name };
+      sum.hidden = false;
+      sum.innerHTML = `Detected <b>${parsed.granularity}</b> data · ` +
+        `${parsed.terms[0].dates.length} rows (${parsed.terms[0].dates[0]} → ` +
+        `${parsed.terms[0].dates.at(-1)}) · terms: ` +
+        parsed.terms.map(t => `<b>${t.name}</b>`).join(", ");
+      document.getElementById("import-confirm").disabled = false;
+    } catch (e) {
+      pendingImport = null;
+      sum.hidden = false; sum.textContent = "✕ " + e.message;
+      document.getElementById("import-confirm").disabled = true;
+    }
+  });
+  document.getElementById("import-confirm").addEventListener("click", () => {
+    if (!pendingImport) return;
+    const overlay = store(LS_IMPORT), catId = catSel.value;
+    overlay[catId] ??= {};
+    for (const t of pendingImport.parsed.terms) {
+      overlay[catId][t.name] ??= {};
+      overlay[catId][t.name][pendingImport.parsed.granularity] = {
+        source: `${pendingImport.fileName} (imported ${new Date().toISOString().slice(0, 10)})`,
+        dates: t.dates, values: t.values };
+    }
+    save(LS_IMPORT, overlay);
+    refreshData(); dlg.close();
+    document.getElementById("import-summary").hidden = true;
+    document.getElementById("import-file").value = "";
+    document.getElementById("import-confirm").disabled = true;
+  });
+  document.getElementById("import-reset").addEventListener("click", () => {
+    localStorage.removeItem(LS_IMPORT); refreshData(); dlg.close(); });
+
+  const help = document.getElementById("dlg-help");
+  document.getElementById("btn-help").addEventListener("click", () => help.showModal());
+  document.getElementById("help-close").addEventListener("click", () => help.close());
+}
+
+function refreshData() {
+  CATS = mergedData();
+  for (const k in analysisCache) delete analysisCache[k];
+  for (const k in curTerm) delete curTerm[k];
+  renderAll();
+}
+
+/* ========================= budget control wiring ========================== */
+function setBudget(patch) { save(LS_BUDGET, { ...budgetState(), ...patch }); renderBudget(); }
+
+function wireBudget() {
+  document.getElementById("role").innerHTML =
+    ROLES.map(r => `<option value="${r.id}">${r.label}</option>`).join("");
+  document.getElementById("budget-cat").innerHTML =
+    CATS.map(c => `<option value="${c.id}">${c.label}</option>`).join("");
+
+  document.getElementById("role").addEventListener("change", ev => {
+    const r = ROLES.find(x => x.id === ev.target.value);
+    // A new role brings its own sensible defaults, including its category.
+    setBudget({ role: r.id, cat: r.cat, budget: r.budget, mix: r.mix });
+  });
+  document.getElementById("budget-cat").addEventListener("change",
+    ev => setBudget({ cat: ev.target.value }));
+  document.getElementById("mix").addEventListener("input",
+    ev => setBudget({ mix: +ev.target.value }));
+  document.getElementById("conc").addEventListener("input",
+    ev => setBudget({ conc: +ev.target.value }));
+
+  const bEl = document.getElementById("budget");
+  let debounce;
+  const commit = () => {
+    const n = Math.max(0, Math.round(Number(bEl.value.replace(/[^0-9.]/g, "")) || 0));
+    setBudget({ budget: n });
+  };
+  bEl.addEventListener("input", () => { clearTimeout(debounce);
+    debounce = setTimeout(commit, 300); });
+  bEl.addEventListener("blur", () => { clearTimeout(debounce); commit(); });
+  bEl.addEventListener("keydown", ev => { if (ev.key === "Enter") bEl.blur(); });
+
+  document.getElementById("btn-csv").addEventListener("click", () => {
+    if (!lastPlan) return;
+    const esc = v => `"${String(v).replace(/"/g, '""')}"`;
+    const text = lastPlan.csv.map(r => r.map(esc).join(",")).join("\r\n");
+    const url = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = lastPlan.name; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+}
+
+/* ============================ misc wiring ================================= */
+document.getElementById("assume-month").innerHTML =
+  MONTHS.map((m, i) => `<option value="${i + 1}">${m}</option>`).join("");
+document.getElementById("assume-add").addEventListener("click", () => {
+  const name = document.getElementById("assume-name").value.trim();
+  const month = +document.getElementById("assume-month").value;
+  if (!name) return;
+  const saved = store(LS_ASSUMED);
+  saved[curCat] = [...assumedFor(curCat), { name, month }];
+  save(LS_ASSUMED, saved);
+  document.getElementById("assume-name").value = "";
+  renderAll();
+});
+
+document.getElementById("btn-theme").addEventListener("click", () => {
+  const cur = document.documentElement.dataset.theme || "auto";
+  const next = cur === "auto" ? "dark" : cur === "dark" ? "light" : "auto";
+  if (next === "auto") { delete document.documentElement.dataset.theme;
+    localStorage.removeItem(LS_THEME); }
+  else { document.documentElement.dataset.theme = next; localStorage.setItem(LS_THEME, next); }
+  renderAll();
+});
+const savedTheme = localStorage.getItem(LS_THEME);
+if (savedTheme) document.documentElement.dataset.theme = savedTheme;
+
+let resizeT;
+window.addEventListener("resize", () => { clearTimeout(resizeT);
+  resizeT = setTimeout(renderAll, 150); });
+
+matchMedia("(prefers-color-scheme: dark)")
+  .addEventListener("change", () => { if (!document.documentElement.dataset.theme) renderAll(); });
+
+wireDialogs();
+wireBudget();
+renderAll();
+</script>
+</body>
+</html>

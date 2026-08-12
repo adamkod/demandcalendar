@@ -61,6 +61,29 @@ Every row must trace back to a number from the analysis — no vibes. If the use
 wants a visual, build a simple chart or one-page HTML calendar from the `--json`
 output.
 
+## The dashboard
+
+`site/index.html` is the deliverable interface — self-contained, opens with no server.
+Tabs: **Overview** (all four categories on one Jan–Dec heatmap + assumption scoreboard),
+one tab per category (births, divorces, marriages, vasectomies), and **Budget planner**
+(role + budget → month-by-month spend plan, phase-colored chart, CSV export).
+
+To refresh it after adding files to `data/`:
+
+```
+py analysis/build_site_data.py
+```
+
+Name real exports `<category>--monthly.csv` (10+ years) and `<category>--weekly.csv`
+(past 5 years). Anything missing is filled with clearly-labeled synthetic data and the
+site shows a SAMPLE banner. The four categories, their terms, and their seeded folklore
+assumptions live in `CATEGORIES` at the top of `analysis/build_site_data.py`; the browser
+mirrors the Python analysis in `site/index.html` — **if you change a threshold or the
+allocation math in one, change it in the other**, or the CLI and the site will disagree.
+
+Users can also import a CSV straight from the browser (button top-right); that data is
+stored in localStorage as an overlay and never touches `data/`.
+
 ## Rules
 
 - Never invent Trends numbers. If there is no CSV in `data/`, get one first — the
@@ -74,3 +97,5 @@ output.
 - A peak that appears in fewer than 3 of 5 years is not seasonality. Call it out.
 - Keep the deliverable decision-ready: a manager should be able to read the
   calendar table alone and know what to do each month.
+- The budget planner allocates a fixed budget across the year. It is not a forecast
+  and says nothing about ROI, conversion rates, or revenue — do not present it as one.
