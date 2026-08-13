@@ -63,6 +63,25 @@ key dates, the monthly index, and a low-resolution warning where one applies.
 Colour never carries meaning alone: every category pairs its hue with a Lucide icon and a
 text label, so the palette stays readable in greyscale and for colour-blind viewers.
 
+**Click any month** to drill into it: a day calendar for the planning year with holidays
+ringed, the ISO weeks inside that month with each one's index, and that month's budget split
+across those weeks. Plus a holiday-lift verdict for every holiday falling in the month.
+
+**Holiday sensitivity** gets its own table. For each holiday it finds the strongest week in
+the surrounding month — offsets from four weeks before to one week after — takes the median
+across years so one unusual year can't invent an effect, and reports how often it repeats. A
+holiday only "lands" at the same bar the monthly classifier uses. Claimed tie-ins are listed
+**even when they fail**, because those are the ones plans get built on.
+
+### What the week layer can and cannot do
+
+- **Days are not measured.** Google Trends serves daily rows only for ranges under about
+  nine months. Day cells inherit their ISO week's index and the UI says so; nothing here
+  claims day-level precision.
+- **Weekly data only exists where you exported it.** Holiday lift needs a *Past 5 years*
+  weekly export of a category's headline term. Where that's missing — or where the weekly
+  series is too coarse to read — the app says so rather than guessing.
+
 **Budget planner.** Pick your job (wedding planner, family law attorney, urology clinic,
 baby brand, …) and enter a budget. It returns a month-by-month spend plan with dollar
 amounts, quarter totals, a phase-colored column chart, and a written rationale per month
@@ -92,8 +111,9 @@ demand-calendar/
 ├── CLAUDE.md                  ← the AI agent: role, workflow, output format
 ├── analysis/
 │   ├── seasonality.py         ← seasonality + peak-reality analyzer (stdlib only)
+│   ├── holidays.py            ← holiday lift by week offset (mirrors site/weeks.js)
 │   ├── build_site_data.py     ← compiles data/*.csv (+ sample fill-in) into site/data.js
-│   └── build_standalone.py    ← inlines data.js into one shareable HTML file
+│   └── build_standalone.py    ← inlines every local script into one shareable file
 ├── data/
 │   ├── HOW-TO-DOWNLOAD.md     ← step-by-step Google Trends export guide
 │   └── sample_multiTimeline.csv  ← synthetic sample so the script runs out of the box
@@ -101,6 +121,7 @@ demand-calendar/
 │   ├── index.html             ← shell — open it directly, no server needed
 │   ├── app.js                 ← React UI (rendering only)
 │   ├── analysis.js            ← the engine; mirrors analysis/seasonality.py
+│   ├── weeks.js               ← holidays + week lift; mirrors analysis/holidays.py
 │   ├── icons.js               ← inlined Lucide glyphs
 │   ├── vendor/                ← React, htm, Tailwind — vendored for offline use
 │   ├── data.js                ← generated; do not hand-edit

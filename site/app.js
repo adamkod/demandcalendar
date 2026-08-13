@@ -139,8 +139,183 @@ function Hero({ cats, active, toggle }) {
     </div>`;
 }
 
+/* --------------------------- month drill-down ---------------------------- */
+const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function MonthDetail({ catId, monthNo, onClose, setTip }) {
+  const t = theme(catId);
+  const cat = CATS.find(c => c.id === catId);
+  const wt = weeklyTermFor(catId);
+  const weekly = wt?.usable ? wt.a.weekly : null;
+  const idx = useMemo(() => weekly ? weeklyIndexByYear(weekly) : null, [weekly]);
+  const year = PLANNING_YEAR;
+
+  const st = budgetState();
+  const headline = defaultTerm(cat);
+  const ha = getAnalysis(catId, headline);
+  const alloc = allocate(ha.monthly?.months || {}, st.budget, st.mix / 100, st.conc / 10);
+  const monthDollars = alloc.dollars[monthNo - 1];
+  const split = weekSplitForMonth(weekly, monthNo, monthDollars, st.conc / 10, year);
+  const hols = holidaysInMonth(year, monthNo);
+
+  const weekIndex = d => idx ? medianWeekIndex(idx, isoWeek(d)) : null;
+  const maxWeek = Math.max(...split.map(w => w.dollars), 1);
+
+  // Lay the month out as calendar rows, padded to Monday starts.
+  const first = new Date(Date.UTC(year, monthNo - 1, 1));
+  const pad = (first.getUTCDay() + 6) % 7;
+  const lastDay = new Date(Date.UTC(year, monthNo, 0)).getUTCDate();
+  const cells = [...Array(pad).fill(null),
+    ...Array.from({ length: lastDay }, (_, i) => new Date(Date.UTC(year, monthNo - 1, i + 1)))];
+
+  return html`
+    <div class=${CARD + " mt-3 overflow-hidden"}>
+      <div class="flex flex-wrap items-center gap-3 border-b border-[#E2E8F0] px-5 py-4"
+        style=${{ background: `linear-gradient(180deg, ${t.soft}55, transparent)` }}>
+        <span class="grid h-8 w-8 place-items-center rounded-xl" style=${{ background: t.soft, color: t.mid }}>
+          <${Icon} name=${t.icon} size=${16} />
+        </span>
+        <div>
+          <div class="text-[15px] font-semibold text-slate-800">
+            ${t.label} · ${MONTHS[monthNo - 1]} ${year}
+          </div>
+          <div class="text-[11.5px] text-slate-400">
+            ${weekly ? `week detail from “${wt.name}”` : "no readable weekly data for this category"}
+          </div>
+        </div>
+        <button onClick=${onClose}
+          class="ml-auto rounded-full border border-[#E2E8F0] bg-white px-3 py-1.5 text-[12.5px] font-medium text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-800">
+          Close
+        </button>
+      </div>
+
+      <div class="grid gap-6 p-5 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <div>
+          <div class="mb-2 grid grid-cols-7 gap-1.5">
+            ${DOW.map(d => html`
+              <div key=${d} class="text-center text-[10.5px] font-medium uppercase tracking-wider text-slate-400">${d}</div>`)}
+          </div>
+          <div class="grid grid-cols-7 gap-1.5">
+            ${cells.map((d, i) => {
+              if (!d) return html`<div key=${"p" + i} />`;
+              const wi = weekIndex(d);
+              // Holidays collide — Valentine's Day and the Super Bowl share
+              // 14 Feb 2027 — so a day can carry more than one.
+              const dayHols = hols.filter(h => h.date.getTime() === d.getTime());
+              const bg = wi == null ? "#F8FAFC" : heatColor(catId, wi);
+              return html`
+                <div key=${d.toISOString()}
+                  onMouseMove=${e => setTip({ x: e.clientX, y: e.clientY, html:
+                    `<b>${MONTHS[monthNo - 1]} ${d.getUTCDate()}, ${year}</b>`
+                    + `<br/>ISO week ${isoWeek(d)}`
+                    + (wi == null ? `<br/><span class="text-slate-400">no weekly data</span>`
+                        : `<br/>week index <b>${Math.round(wi)}</b>`)
+                    + dayHols.map(h => `<br/><b>${h.name}</b>`).join("") })}
+                  onMouseLeave=${() => setTip(null)}
+                  class=${"relative flex h-14 flex-col justify-between rounded-lg p-1.5 transition-all duration-150 "
+                    + (dayHols.length ? "ring-2 ring-offset-1 ring-offset-white " : "")
+                    + (wi == null ? "border border-dashed border-[#E2E8F0] " : "")
+                    + "hover:scale-[1.05] hover:z-10"}
+                  style=${{ background: bg, ...(dayHols.length ? { "--tw-ring-color": t.mid } : {}) }}>
+                  <span class="text-[11px] font-semibold tabular-nums"
+                    style=${{ color: wi == null ? "#94A3B8" : t.ink }}>${d.getUTCDate()}</span>
+                  ${dayHols.length > 0 && html`
+                    <span class="truncate text-[9px] font-semibold leading-tight" style=${{ color: t.ink }}
+                      title=${dayHols.map(h => h.name).join(" · ")}>
+                      ${dayHols[0].name}${dayHols.length > 1 ? ` +${dayHols.length - 1}` : ""}
+                    </span>`}
+                </div>`;
+            })}
+          </div>
+          <p class="mt-3 text-[11.5px] leading-relaxed text-slate-400">
+            ${weekly
+              ? html`Day tint is that day's <b>ISO week</b> index — Google Trends serves daily rows
+                 only for ranges under about nine months, so nothing here claims day-level
+                 precision. Ringed days are holidays.`
+              : html`No readable weekly series for ${t.label.toLowerCase()}, so days are untinted.
+                 Export this category's headline term at <b>Past 5 years</b> to fill this in.`}
+          </p>
+        </div>
+
+        <div>
+          <div class="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-400">
+            Week by week
+          </div>
+          <div class="mt-3 space-y-2.5">
+            ${split.map(w => {
+              const share = w.dollars / (monthDollars || 1);
+              return html`
+                <div key=${w.week} class="group">
+                  <div class="flex items-baseline justify-between text-[12px]">
+                    <span class="font-medium text-slate-600">
+                      Wk ${w.week}
+                      <span class="text-slate-400"> · ${MONTHS[monthNo - 1]} ${w.days[0].getUTCDate()}–${w.days[w.days.length - 1].getUTCDate()}</span>
+                    </span>
+                    <span class="tabular-nums font-semibold text-slate-700">${fmtMoney(w.dollars)}</span>
+                  </div>
+                  <div class="mt-1 h-2 overflow-hidden rounded-full bg-slate-100">
+                    <div class="h-full rounded-full transition-all duration-300"
+                      style=${{ width: (w.dollars / maxWeek * 100) + "%", background: t.mid }} />
+                  </div>
+                  <div class="mt-1 flex justify-between text-[10.5px] text-slate-400">
+                    <span>${w.index == null ? "index n/a" : `week index ${w.index}`}</span>
+                    <span>${pct(share)} of month</span>
+                  </div>
+                </div>`;
+            })}
+          </div>
+          <p class="mt-3 text-[11px] leading-relaxed text-slate-400">
+            ${fmtMoney(monthDollars)} for ${MONTHS[monthNo - 1]} at your current
+            ${fmtCompact(st.budget)} plan, split by demand two weeks ahead of each week —
+            spend buys demand it can still influence. Month total is unchanged.
+          </p>
+        </div>
+      </div>
+
+      ${hols.length > 0 && html`
+        <div class="border-t border-[#E2E8F0] bg-slate-50/60 px-5 py-4">
+          <div class="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-400">
+            Holidays this month
+          </div>
+          <div class="mt-3 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+            ${hols.map(h => {
+              const s = weekly ? holidaySensitivity(weekly, h.id) : null;
+              const claimed = h.tags.includes(catId);
+              return html`
+                <div key=${h.id} class="rounded-xl border border-[#E2E8F0] bg-white p-3">
+                  <div class="flex items-center gap-2">
+                    <span class="grid h-6 w-6 place-items-center rounded-lg"
+                      style=${{ background: t.soft, color: t.mid }}>
+                      <${Icon} name=${h.icon} size=${12} />
+                    </span>
+                    <span class="text-[12.5px] font-semibold text-slate-700">${h.name}</span>
+                    <span class="ml-auto text-[11px] tabular-nums text-slate-400">
+                      ${MONTHS[monthNo - 1]} ${h.date.getUTCDate()}
+                    </span>
+                  </div>
+                  <div class="mt-2 text-[11.5px] leading-relaxed text-slate-500">
+                    ${!s ? "No weekly data to test against."
+                      : s.lands
+                        ? html`<b class="text-emerald-700">Lands.</b> Peak lift
+                            ${s.bestOffset === 0 ? "in the holiday week itself"
+                              : s.bestOffset < 0 ? `${-s.bestOffset} week${s.bestOffset === -1 ? "" : "s"} before`
+                              : "the week after"} —
+                            index ${s.bestMedian}, in ${Math.round(s.consistency * 100)}% of
+                            ${s.years} years. Pull budget forward to that week.`
+                        : html`<b class="text-slate-600">No lift.</b> Best week reads
+                            ${s.bestMedian} against a 100 baseline${s.bestMedian >= MILD_BUMP_INDEX
+                              ? `, but only in ${Math.round(s.consistency * 100)}% of years` : ""}.
+                            ${claimed ? " The claimed tie-in doesn't show up." : ""}`}
+                  </div>
+                </div>`;
+            })}
+          </div>
+        </div>`}
+    </div>`;
+}
+
 /* -------------------------------- heatmap -------------------------------- */
-function Heatmap({ rows, setTip }) {
+function Heatmap({ rows, setTip, openCell, setOpenCell }) {
   if (!rows.length) return html`
     <div class=${CARD + " grid place-items-center py-14 text-[13.5px] text-slate-400"}>
       Select a category above to see its year.
@@ -177,16 +352,23 @@ function Heatmap({ rows, setTip }) {
                   const real = info.label === "REAL PEAK";
                   const strong = real || info.label === "MILD BUMP";
                   const bg = heatColor(row.cat.id, info.index);
+                  const open = openCell && openCell.catId === row.cat.id && openCell.monthNo === m;
+                  const nHol = holidaysInMonth(PLANNING_YEAR, m).length;
                   return html`
-                    <div key=${mn}
+                    <button key=${mn} type="button"
+                      aria-expanded=${open}
+                      aria-label=${`${t.label}, ${mn}: index ${info.index}, ${info.label}. Open week detail.`}
+                      onClick=${() => setOpenCell(open ? null : { catId: row.cat.id, monthNo: m })}
                       onMouseMove=${e => setTip({ x: e.clientX, y: e.clientY, html:
                         `<b>${t.label} · ${mn}</b><br/><span class="text-slate-500">“${row.term}”</span>`
                         + `<br/>index <b>${info.index}</b> · ${info.label}`
-                        + `<br/>present in ${Math.round(info.consistency * 100)}% of years` })}
+                        + `<br/>present in ${Math.round(info.consistency * 100)}% of years`
+                        + `<br/><span class="text-slate-400">click for weeks & holidays</span>` })}
                       onMouseLeave=${() => setTip(null)}
-                      class=${"relative grid h-11 place-items-center rounded-lg transition-all duration-150 cursor-default hover:scale-[1.06] hover:z-10 "
-                        + (real ? "ring-2 ring-offset-1 ring-offset-white" : "")}
-                      style=${{ background: bg, ...(real ? { "--tw-ring-color": t.mid } : {}) }}>
+                      class=${"relative grid h-11 w-full place-items-center rounded-lg transition-all duration-150 cursor-pointer hover:scale-[1.06] hover:z-10 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 "
+                        + (real || open ? "ring-2 ring-offset-1 ring-offset-white" : "")}
+                      style=${{ background: bg,
+                                ...(real || open ? { "--tw-ring-color": open ? "#334155" : t.mid } : {}) }}>
                       ${strong && html`
                         <span class="text-[11.5px] font-semibold tabular-nums" style=${{ color: t.ink }}>
                           ${Math.round(info.index)}
@@ -194,7 +376,13 @@ function Heatmap({ rows, setTip }) {
                       ${m === peakM && real && html`
                         <span class="absolute -top-1 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rotate-45 rounded-[1px]"
                           style=${{ background: t.mid }} />`}
-                    </div>`;
+                      ${nHol > 0 && html`
+                        <span class="absolute bottom-1 left-1/2 flex -translate-x-1/2 gap-[2px]">
+                          ${Array.from({ length: Math.min(nHol, 3) }, (_, k) => html`
+                            <span key=${k} class="h-[3px] w-[3px] rounded-full"
+                              style=${{ background: t.ink, opacity: .45 }} />`)}
+                        </span>`}
+                    </button>`;
                 })}
               </div>`;
           })}
@@ -204,7 +392,13 @@ function Heatmap({ rows, setTip }) {
               cooler → hotter than that term's own average
             </span>
             <span class="flex items-center gap-1.5"><span class="h-2 w-2 rotate-45 rounded-[1px] bg-slate-400" /> real peak</span>
-            <span>numbers shown on peaks and bumps only</span>
+            <span class="flex items-center gap-1.5">
+              <span class="flex gap-[2px]">
+                ${[0, 1].map(k => html`<span key=${k} class="h-[3px] w-[3px] rounded-full bg-slate-400" />`)}
+              </span>
+              holidays that month
+            </span>
+            <span class="text-slate-500">click any month for weeks, days &amp; holiday lift</span>
           </div>
         </div>
       </div>
@@ -306,6 +500,96 @@ function CalloutCards({ callouts }) {
             <p class="mt-3 text-[13px] leading-relaxed text-slate-500">${c.body}</p>
           </article>`;
       })}
+    </div>`;
+}
+
+/* --------------------------- holiday sensitivity ------------------------- */
+/* Answers "how close to the holiday, and does it move?" for every category that
+   has readable weekly rows. A claimed tie-in that fails is shown, not hidden —
+   those are the ones a plan is most likely to be built on. */
+function HolidayPanel({ rows }) {
+  const items = [];
+  const untestable = [];
+  for (const row of rows) {
+    const wt = weeklyTermFor(row.cat.id);
+    if (!wt || !wt.usable) {
+      untestable.push({ cat: row.cat.id,
+        why: !wt ? "no weekly export" : `weekly series too coarse (${wt.a.weekly.resolution.stepPct}% per step)` });
+      continue;
+    }
+    for (const h of holidaysFor(PLANNING_YEAR)) {
+      const s = holidaySensitivity(wt.a.weekly, h.id);
+      if (!s) continue;
+      const claimed = h.tags.includes(row.cat.id);
+      if (!s.lands && !claimed) continue;
+      items.push({ cat: row.cat.id, term: wt.name, h, s, claimed });
+    }
+  }
+  items.sort((a, b) => (b.s.lands - a.s.lands) || (b.s.bestMedian - a.s.bestMedian));
+  if (!items.length && !untestable.length) return null;
+
+  const when = off => off === 0 ? "holiday week"
+    : off < 0 ? `${-off} wk${off === -1 ? "" : "s"} before` : "week after";
+
+  return html`
+    <div class=${CARD + " overflow-hidden"}>
+      <div class="overflow-x-auto">
+        <table class="w-full min-w-[680px] text-[13px]">
+          <thead>
+            <tr class="border-b border-[#E2E8F0] text-left text-[11px] font-medium uppercase tracking-[0.07em] text-slate-400">
+              <th class="px-5 py-3">Holiday</th><th class="py-3">Category</th>
+              <th class="py-3">Strongest week</th><th class="py-3 text-right">Index</th>
+              <th class="py-3 text-right">Years</th><th class="px-5 py-3">Verdict</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map(({ cat, term, h, s, claimed }) => {
+              const t = theme(cat);
+              return html`
+                <tr key=${cat + h.id} class="border-b border-[#F1F5F9] transition-colors last:border-0 hover:bg-slate-50/70">
+                  <td class="px-5 py-3">
+                    <span class="flex items-center gap-2 font-medium text-slate-700">
+                      <${Icon} name=${h.icon} size=${14} className="text-slate-400" />
+                      ${h.name}
+                      <span class="text-[11px] tabular-nums font-normal text-slate-400">
+                        ${MONTHS[h.date.getUTCMonth()]} ${h.date.getUTCDate()}
+                      </span>
+                    </span>
+                  </td>
+                  <td class="py-3">
+                    <span class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11.5px] font-medium"
+                      style=${{ background: t.soft, color: t.ink }}>
+                      <${Icon} name=${t.icon} size=${11} /> ${t.label}
+                    </span>
+                  </td>
+                  <td class="py-3 text-slate-600">${when(s.bestOffset)}</td>
+                  <td class="py-3 text-right tabular-nums font-semibold"
+                    style=${{ color: s.lands ? t.ink : "#94A3B8" }}>${s.bestMedian}</td>
+                  <td class="py-3 text-right tabular-nums text-slate-500">
+                    ${Math.round(s.consistency * 100)}% of ${s.years}
+                  </td>
+                  <td class="px-5 py-3 text-[12.5px] leading-snug">
+                    ${s.lands
+                      ? html`<span class="font-semibold text-emerald-700">Lands.</span>
+                          <span class="text-slate-500"> Shift budget into that week.</span>`
+                      : html`<span class="font-semibold text-slate-500">No lift.</span>
+                          <span class="text-slate-400">
+                            ${claimed ? " Claimed tie-in doesn't show up in the data." : ""}</span>`}
+                    <span class="block text-[11px] text-slate-400">measured on “${term}”</span>
+                  </td>
+                </tr>`;
+            })}
+          </tbody>
+        </table>
+      </div>
+      ${untestable.length > 0 && html`
+        <div class="flex gap-2.5 border-t border-[#E2E8F0] bg-amber-50/60 px-5 py-3 text-[12px] leading-relaxed text-amber-900">
+          <${Icon} name="triangle-alert" size=${14} className="mt-0.5 text-amber-500" />
+          <span>
+            Not testable yet: ${untestable.map(u => `${theme(u.cat).label} (${u.why})`).join(", ")}.
+            Holiday lift needs a <b>Past 5 years</b> weekly export of that category's headline term.
+          </span>
+        </div>`}
     </div>`;
 }
 
@@ -731,6 +1015,7 @@ function App() {
   const [nonce, setNonce] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
   const [tip, setTip] = useState(null);
+  const [openCell, setOpenCell] = useState(null);
   const cats = useMemo(() => { refreshData(); return CATS; }, [nonce]);
   const [active, setActive] = useState(cats.map(c => c.id));
 
@@ -762,15 +1047,31 @@ function App() {
             </div>`}
 
           <${Section} eyebrow="Seasonality" title="Twelve months, four life events"
-            sub="Each row is one category's headline search term, indexed against its own yearly
-                 average — so 100 is normal for that term and rows can be read side by side.">
-            <${Heatmap} rows=${rows} setTip=${setTip} />
+            sub=${html`Each row is one category's headline search term, indexed against its own
+                 yearly average — so 100 is normal for that term and rows can be read side by
+                 side. <b class="text-slate-600">Click any month</b> to open its weeks, days and
+                 holidays.`}>
+            <${Heatmap} rows=${rows} setTip=${setTip}
+              openCell=${openCell} setOpenCell=${setOpenCell} />
+            ${openCell && html`
+              <${MonthDetail} key=${openCell.catId + openCell.monthNo}
+                catId=${openCell.catId} monthNo=${openCell.monthNo}
+                onClose=${() => setOpenCell(null)} setTip=${setTip} />`}
           <//>
 
           <${Section} eyebrow="Findings" title="What the data actually says"
             sub="Generated from the analysis, not written by hand — which is why some of these
                  cards report a peak that isn't there.">
             <${CalloutCards} callouts=${callouts} />
+          <//>
+
+          <${Section} eyebrow="Holidays" title="Does the holiday actually move demand?"
+            sub=${html`For every category with readable weekly data, the strongest week in the
+                 month around each holiday — measured as a median across years, so one unusual
+                 year can't invent an effect. Claimed tie-ins are listed
+                 <b class="text-slate-600">even when they fail</b>, because those are the ones
+                 plans get built on.`}>
+            <${HolidayPanel} rows=${rows} />
           <//>
 
           <${Section} eyebrow="Reality check" title="Assumed peaks, scored"

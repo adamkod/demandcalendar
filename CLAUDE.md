@@ -73,7 +73,14 @@ assumption scoreboard, per-category detail) and **Budget planner** (role + budge
 month-by-month spend plan, phase-coloured chart, CSV export).
 
 `site/app.js` renders only. `site/analysis.js` holds every calculation and mirrors
-`analysis/seasonality.py`. Keep them in lockstep.
+`analysis/seasonality.py`; `site/weeks.js` holds the holiday and week-offset layer and
+mirrors `analysis/holidays.py`. Keep each pair in lockstep.
+
+Clicking a month opens a drill-down: day calendar with holidays ringed, ISO weeks with their
+indices, and the month's budget split across those weeks. Two limits are load-bearing —
+**Trends has no daily rows** for ranges over ~9 months, so day cells inherit their week and
+must keep saying so; and **holiday lift needs a weekly export** of the category's headline
+term, so where that's missing the app reports the gap instead of estimating.
 
 To refresh it after adding files to `data/`:
 
