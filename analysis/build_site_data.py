@@ -115,11 +115,35 @@ def synth_series(term, granularity):
 
 
 def detect_granularity(path):
-    """monthly / weekly from the export's own header keyword, or None."""
+    """monthly / weekly from the export's header keyword, or None if not a series.
+
+    The newer Trends download heads its date column "Time" and leaves the
+    granularity implicit, so fall back to measuring the gap between the first two
+    rows. Files with neither header — related-query lists, for instance — return
+    None and are skipped by the caller.
+    """
     with open(path, newline="", encoding="utf-8-sig") as f:
-        for row in csv.reader(f):
-            if row and row[0].strip() in ("Month", "Week", "Day"):
-                return "monthly" if row[0].strip() == "Month" else "weekly"
+        rows = csv.reader(f)
+        for row in rows:
+            if not row:
+                continue
+            key = row[0].strip()
+            if key in ("Month", "Week", "Day"):
+                return "monthly" if key == "Month" else "weekly"
+            if key == "Time":
+                stamps = []
+                for r in rows:
+                    if r and r[0].strip():
+                        stamps.append(r[0].strip())
+                    if len(stamps) == 2:
+                        break
+                if len(stamps) < 2:
+                    return None
+                try:
+                    a, b = (date(*[int(p) for p in s.split("-")]) for s in stamps)
+                except ValueError:
+                    return None
+                return "weekly" if (b - a).days <= 10 else "monthly"
     return None
 
 

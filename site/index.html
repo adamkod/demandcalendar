@@ -448,15 +448,34 @@ function monthlyIndex(dates, values) {
     (byMonth[m] ??= []).push(values[i]);
     ((byYM[y] ??= {})[m] ??= []).push(values[i]);
   });
-  const overall = mean(values), index = {};
-  for (let m = 1; m <= 12; m++) if (byMonth[m]) index[m] = mean(byMonth[m]) / overall * 100;
   const perYear = {};
   for (const y in byYM) {
     const months = byYM[y];
     if (Object.keys(months).length < 10) continue;   // partial years at range edges
     const ym = mean(Object.values(months).flat());
+    if (!ym) continue;
     perYear[y] = {};
     for (const m in months) perYear[y][m] = mean(months[m]) / ym * 100;
+  }
+
+  // Average the within-year indices rather than pooling raw values: pooling lets a
+  // secular trend pose as seasonality whenever the window doesn't start in January
+  // (a 2021-08..2026-08 export covers Jan-Jul in six years but Sep-Dec in five, so
+  // a term that doubles mid-window gets a fake first-half peak). Pooled fallback
+  // only when there aren't two complete years to average.
+  const index = {};
+  const years = Object.keys(perYear);
+  if (years.length >= 2) {
+    for (let m = 1; m <= 12; m++) {
+      const vals = years.filter(y => perYear[y][m] !== undefined)
+                        .map(y => perYear[y][m]);
+      if (vals.length) index[m] = mean(vals);
+    }
+  } else {
+    const overall = mean(values);
+    if (overall)
+      for (let m = 1; m <= 12; m++)
+        if (byMonth[m]) index[m] = mean(byMonth[m]) / overall * 100;
   }
   return { index, perYear };
 }
@@ -593,19 +612,30 @@ function analyzeTerm(term) {
   // consumer must handle that — inventing a date here is the failure mode this
   // whole tool exists to prevent.
   a.timing = null;
-  if (a.weekly?.defined) {
+  // The weekly amplitude test measures shape; the monthly classifier tests
+  // whether that shape recurs. A ramp stands only when both agree, so the site
+  // can never date a campaign against a month it has just labelled NO PEAK.
+  const peakMonthInfo = a.weekly?.defined
+    ? a.monthly?.months?.[monthOfWeek(a.weekly.peakWeek)] : null;
+  const weeklyVetoed = a.weekly?.defined && a.monthly
+    && !["REAL PEAK", "MILD BUMP"].includes(peakMonthInfo?.label);
+  if (weeklyVetoed) a.weeklyVeto = { label: peakMonthInfo?.label || "NO PEAK",
+    peakWeek: a.weekly.peakWeek, amplitude: a.weekly.amplitude };
+
+  if (a.weekly?.defined && !weeklyVetoed) {
     const w = a.weekly;
     a.timing = { precision: "week", peakWeek: w.peakWeek, rampWeek: w.rampWeek,
       leadWeeks: w.leadWeeks, publishWeek: wrapW(w.rampWeek - 8),
       paidWeek: wrapW(w.peakWeek - 3), amplitude: w.amplitude };
   } else if (!a.weekly && a.monthly) {
-    // No weekly file: fall back to month precision, but only if some month
-    // actually clears the bump threshold.
+    // No weekly file: fall back to month precision. "Defined" borrows the
+    // classifier's verdict, not a bare threshold, so a month that is only
+    // elevated in a minority of years never becomes a campaign date.
     const idx = a.monthly.months;
     let peakM = 1;
     for (let m = 2; m <= 12; m++)
       if ((idx[m]?.index ?? 0) > (idx[peakM]?.index ?? 0)) peakM = m;
-    if ((idx[peakM]?.index ?? 0) >= MILD_BUMP_INDEX)
+    if (["REAL PEAK", "MILD BUMP"].includes(idx[peakM]?.label))
       a.timing = { precision: "month", peakMonth: peakM,
         rampMonth: (peakM + 10) % 12 + 1 };
   }
@@ -698,14 +728,30 @@ function verdictFor(catId, assumption) {
         shifted = { term: t.name, month: x, info: months[x] };
     if (info?.label === "MILD BUMP" && !mild) mild = { term: t.name, info };
   }
+  // A real peak somewhere else in the year is the most useful thing we can say
+  // when the assumed month doesn't hold up — don't bury it.
+  let elsewhere = null;
+  for (const t of cat.terms) {
+    const months = getAnalysis(catId, t.name).monthly?.months;
+    if (!months) continue;
+    for (let x = 1; x <= 12; x++)
+      if (months[x]?.label === "REAL PEAK" && near(x) > 2
+          && (!elsewhere || months[x].index > elsewhere.info.index))
+        elsewhere = { term: t.name, month: x, info: months[x] };
+  }
+  const redirect = elsewhere
+    ? ` The real peak is <b>${MONTHS[elsewhere.month - 1]}</b> — “${elsewhere.term}”
+        index ${elsewhere.info.index}, in ${Math.round(elsewhere.info.consistency * 100)}%
+        of years. Move the plan there.` : "";
+
   if (confirmed) return { v: "CONFIRMED", cls: "v-confirmed", glyph: "✓", color: "var(--good)",
     why: `“${confirmed.term}” peaks in ${MONTHS[m - 1]}: index ${confirmed.info.index}, in ${Math.round(confirmed.info.consistency * 100)}% of years.` };
   if (shifted) return { v: "MISTIMED", cls: "v-mistimed", glyph: "⇄", color: "var(--warning)",
     why: `The real peak is ${MONTHS[shifted.month - 1]}, not ${MONTHS[m - 1]} — “${shifted.term}” index ${shifted.info.index} there. Shift the plan.` };
   if (mild) return { v: "OVERRATED", cls: "v-overrated", glyph: "◐", color: "var(--serious)",
-    why: `Only a mild bump for “${mild.term}” (index ${mild.info.index}). Worth a nod, not a campaign.` };
+    why: `Only a mild bump for “${mild.term}” (index ${mild.info.index}). Worth a nod, not a campaign.${redirect}` };
   return { v: "BUSTED", cls: "v-busted", glyph: "✕", color: "var(--critical)",
-    why: `No tracked term shows a real ${MONTHS[m - 1]} peak. Stop planning around this.` };
+    why: `No tracked term shows a real ${MONTHS[m - 1]} peak. Stop planning around this.${redirect}` };
 }
 
 /* ============================ svg helpers ================================= */
@@ -783,12 +829,17 @@ function renderWeeklyChart(a) {
     return;
   }
   const { curve } = a.weekly, t = a.timing;
-  if (!t) box.insertAdjacentHTML("beforeend",
-    `<p class="sub" style="margin:0 0 8px"><b>No season detected.</b> The average
-     year peaks only ${Math.round((a.weekly.amplitude || 0) * 100)}% above its own
-     median — under the ${MIN_RAMP_AMPLITUDE * 100}% needed to call a ramp. The curve
-     is drawn without publish/ramp/peak markers because dating them here would be
-     reading noise.</p>`);
+  if (!t) box.insertAdjacentHTML("beforeend", a.weeklyVeto
+    ? `<p class="sub" style="margin:0 0 8px"><b>No season detected.</b> The average
+       year does rise ${Math.round(a.weeklyVeto.amplitude * 100)}% into
+       ${fmtWeek(a.weeklyVeto.peakWeek)}, but that month grades
+       <b>${a.weeklyVeto.label}</b> over the long horizon — the rise doesn't repeat in
+       enough years to plan against. Markers are withheld: it's noise, not a season.</p>`
+    : `<p class="sub" style="margin:0 0 8px"><b>No season detected.</b> The average
+       year peaks only ${Math.round((a.weekly.amplitude || 0) * 100)}% above its own
+       median — under the ${MIN_RAMP_AMPLITUDE * 100}% needed to call a ramp. The curve
+       is drawn without publish/ramp/peak markers because dating them here would be
+       reading noise.</p>`);
   const w = Math.max(box.clientWidth || 900, 560), h = 260,
         ml = 40, mr = 14, mt = 30, mb = 26;
   const svg = el("svg", { viewBox: `0 0 ${w} ${h}`, role: "img",

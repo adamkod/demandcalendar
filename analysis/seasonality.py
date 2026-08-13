@@ -52,11 +52,13 @@ def parse_trends_csv(path):
     with open(path, newline="", encoding="utf-8-sig") as f:
         rows = list(csv.reader(f))
 
+    # "Week"/"Day"/"Month" is the classic Explore export; "Time" is what the newer
+    # download produces, with the granularity implied by the row spacing instead.
     header_i = next((i for i, r in enumerate(rows)
-                     if r and r[0].strip() in ("Week", "Day", "Month")), None)
+                     if r and r[0].strip() in ("Week", "Day", "Month", "Time")), None)
     if header_i is None:
         sys.exit(f"error: {path} does not look like a Google Trends export "
-                 "(no Week/Day/Month header row found)")
+                 "(no Week/Day/Month/Time header row found)")
 
     terms = [c.split(":")[0].strip() for c in rows[header_i][1:]]
     dates, series = [], {t: [] for t in terms}
@@ -75,23 +77,47 @@ def parse_trends_csv(path):
 
 
 def monthly_index(dates, values):
-    """Seasonal index per month, plus per-year monthly indices for consistency."""
+    """Seasonal index per month, plus per-year monthly indices for consistency.
+
+    The index is the average of the *within-year* indices, not a pooled average
+    of the raw values. Pooling lets a secular trend masquerade as seasonality
+    whenever the export does not start in January: "divorce lawyer" more than
+    doubles in 2025, and because a 2021-08..2026-08 window covers Jan-Jul in six
+    calendar years but Sep-Dec in only five, the pooled figure hands the first
+    half of the year a peak built entirely out of that growth. Normalising each
+    year against its own mean first removes the level shift, so what is left is
+    shape. Only years with >= 10 months count, which also drops the ragged years
+    at both ends of the window.
+
+    Falls back to the pooled calculation when there are fewer than two complete
+    years, which is all a short export can support.
+    """
     by_month = defaultdict(list)
     by_year_month = defaultdict(lambda: defaultdict(list))
     for d, v in zip(dates, values):
         by_month[d.month].append(v)
         by_year_month[d.year][d.month].append(v)
 
-    overall = statistics.mean(values)
-    index = {m: statistics.mean(vs) / overall * 100 for m, vs in by_month.items()}
-
     per_year = {}
     for y, months in by_year_month.items():
         if len(months) < 10:          # skip partial years at the range edges
             continue
         year_mean = statistics.mean(v for vs in months.values() for v in vs)
+        if not year_mean:
+            continue
         per_year[y] = {m: statistics.mean(vs) / year_mean * 100
                        for m, vs in months.items()}
+
+    if len(per_year) >= 2:
+        index = {}
+        for m in range(1, 13):
+            vals = [yi[m] for yi in per_year.values() if m in yi]
+            if vals:
+                index[m] = statistics.mean(vals)
+    else:
+        overall = statistics.mean(values)
+        index = {m: statistics.mean(vs) / overall * 100
+                 for m, vs in by_month.items()} if overall else {}
     return index, per_year
 
 
@@ -171,6 +197,45 @@ def ramp_and_peak(curve):
             "ramp_lead_weeks": lead, "amplitude": round(amplitude, 3)}
 
 
+def week_to_month(week):
+    """Calendar month an ISO week falls in (reference year, good enough to bucket)."""
+    return date.fromordinal(date(2026, 1, 1).toordinal() + (week - 1) * 7 + 3).month
+
+
+def detect_series_granularity(dates):
+    """weekly / monthly from the actual row spacing."""
+    if len(dates) < 3:
+        return "monthly"
+    gaps = [(dates[i + 1] - dates[i]).days for i in range(min(6, len(dates) - 1))]
+    return "weekly" if statistics.median(gaps) <= 10 else "monthly"
+
+
+def month_timing(months):
+    """Ramp/peak at month precision, for a series with no weekly resolution.
+
+    Running weekly_curve over monthly rows is not an approximation, it is
+    garbage: each month lands on one ISO week, leaving 40 of 52 slots empty and
+    a curve whose peak is an artefact of where the zeros fall. A monthly series
+    gets a monthly answer.
+
+    "Defined" borrows the classifier's verdict rather than a bare threshold, so
+    a month that is only elevated in a minority of years does not become a
+    campaign date.
+    """
+    if not months:
+        return {"defined": False, "peak_month": None, "amplitude": 0.0}
+    peak_m = max(months, key=lambda m: months[m]["index"])
+    idxs = [i["index"] for i in months.values()]
+    med = statistics.median(idxs)
+    amp = (months[peak_m]["index"] - med) / med if med else 0.0
+    defined = months[peak_m]["label"] in ("REAL PEAK", "MILD BUMP")
+    out = {"defined": defined, "peak_month": peak_m, "amplitude": round(amp, 3)}
+    if defined:
+        out["ramp_month"] = (peak_m + 10) % 12 + 1        # month before the peak
+        out["publish_month"] = (peak_m + 8) % 12 + 1      # ~3 months before
+    return out
+
+
 def find_anomalies(dates, values):
     """Weeks far above the cross-year norm for that calendar week: viral one-offs.
 
@@ -243,26 +308,57 @@ def analyze(path):
               "range": f"{dates[0].isoformat()} to {dates[-1].isoformat()}",
               "points": len(dates), "years": years, "terms": {}}
 
+    gran = detect_series_granularity(dates)
+    report["granularity"] = gran
+
     for term, values in series.items():
         index, per_year = monthly_index(dates, values)
         months = classify_months(index, per_year)
-        curve = weekly_curve(dates, values)
-        timing = ramp_and_peak(curve)
         entry = {
             "months": {MONTH_NAMES[m - 1]: months[m] for m in sorted(months)},
-            "timing_defined": timing["defined"],
-            "amplitude": timing["amplitude"],
-            "peak_week": timing["peak_week"],
-            "peak_week_approx": week_to_approx_date(timing["peak_week"]),
+            "granularity": gran,
             "resolution": series_resolution(values),
             "anomalies": find_anomalies(dates, values),
         }
-        if timing["defined"]:
+        if gran == "weekly":
+            timing = ramp_and_peak(weekly_curve(dates, values))
+            # The weekly amplitude test measures shape; the monthly classifier
+            # tests whether the shape recurs. Let a ramp stand only when both
+            # agree, so the report can never date a campaign against a month it
+            # has just labelled NO PEAK.
+            if timing["defined"]:
+                pm = months.get(week_to_month(timing["peak_week"]), {})
+                if pm.get("label") not in ("REAL PEAK", "MILD BUMP"):
+                    timing = {"defined": False, "peak_week": timing["peak_week"],
+                              "amplitude": timing["amplitude"], "vetoed": True,
+                              "veto_label": pm.get("label", "NO PEAK")}
+            entry["timing_vetoed"] = timing.get("vetoed", False)
+            entry["veto_label"] = timing.get("veto_label")
             entry.update({
-                "ramp_start_week": timing["ramp_start_week"],
-                "ramp_start_approx": week_to_approx_date(timing["ramp_start_week"]),
-                "ramp_lead_weeks": timing["ramp_lead_weeks"],
+                "timing_defined": timing["defined"],
+                "amplitude": timing["amplitude"],
+                "peak_week": timing["peak_week"],
+                "peak_week_approx": week_to_approx_date(timing["peak_week"]),
             })
+            if timing["defined"]:
+                entry.update({
+                    "ramp_start_week": timing["ramp_start_week"],
+                    "ramp_start_approx": week_to_approx_date(timing["ramp_start_week"]),
+                    "ramp_lead_weeks": timing["ramp_lead_weeks"],
+                })
+        else:
+            timing = month_timing(months)
+            entry.update({
+                "timing_defined": timing["defined"],
+                "amplitude": timing["amplitude"],
+                "peak_month": (MONTH_NAMES[timing["peak_month"] - 1]
+                               if timing["peak_month"] else None),
+            })
+            if timing["defined"]:
+                entry.update({
+                    "ramp_month": MONTH_NAMES[timing["ramp_month"] - 1],
+                    "publish_month": MONTH_NAMES[timing["publish_month"] - 1],
+                })
         report["terms"][term] = entry
     return report
 
@@ -307,14 +403,28 @@ def print_report(report):
             print("   mostly rounding error. Re-export this term on its own, or "
                   "against similar-sized terms.")
 
-        if t["timing_defined"]:
+        if t["timing_defined"] and t["granularity"] == "weekly":
             print(f"\nPeak week:       {t['peak_week']} ({t['peak_week_approx']})")
             print(f"Ramp starts:     week {t['ramp_start_week']} "
                   f"({t['ramp_start_approx']}) — {t['ramp_lead_weeks']} weeks "
                   "before peak")
             print("Publish-by date: 8–12 weeks BEFORE ramp start for SEO content; "
                   "paid spend 2–4 weeks before peak.")
-        else:
+        elif t["timing_defined"]:
+            print(f"\nPeak month:      {t['peak_month']}  (month precision — this "
+                  "export has no weekly rows)")
+            print(f"Ramp starts:     {t['ramp_month']}")
+            print(f"Publish by:      {t['publish_month']}  (~3 months ahead, so "
+                  "pages rank before demand)")
+        elif t["granularity"] == "weekly" and t.get("timing_vetoed"):
+            print(f"\nNo usable ramp:  the average year does rise "
+                  f"{t['amplitude'] * 100:.0f}% into week {t['peak_week']} "
+                  f"({t['peak_week_approx']}), but that")
+            print(f"                 month grades {t['veto_label']} — the rise does "
+                  "not repeat in enough")
+            print("                 years to plan against. Treat it as noise, not "
+                  "a season.")
+        elif t["granularity"] == "weekly":
             print(f"\nNo usable ramp:  the average year peaks only "
                   f"{t['amplitude'] * 100:.0f}% above its own median "
                   f"(needs {MIN_RAMP_AMPLITUDE * 100:.0f}%).")
@@ -322,6 +432,13 @@ def print_report(report):
                   "evergreen on a steady")
             print("                 cadence and spend level across the year; there "
                   "is no peak to time.")
+        else:
+            print(f"\nNo usable ramp:  the strongest month ({t['peak_month']}) does "
+                  "not survive the reality")
+            print("                 test — it is not elevated in enough years to "
+                  "plan against. Publish")
+            print("                 evergreen and spend level; there is no peak "
+                  "to time.")
         if t["anomalies"]:
             print("\nOne-off spikes (NOT seasonality — exclude from planning):")
             for a in t["anomalies"]:
