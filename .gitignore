@@ -11,3 +11,6 @@ desktop.ini
 
 # local host-wrapper simulation output
 site/hostcheck.html
+
+# publish-only intermediate, regenerated from the standalone on demand
+site/demand-calendar-hosted.html

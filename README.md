@@ -4,6 +4,40 @@
 editorial and campaign calendar: **what to publish when, how far ahead of the peak to
 start, and which of your assumed peaks don't actually exist.**
 
+## Start here (teammates)
+
+**Just want to look at it?** Open `site/index.html` in any browser. Nothing to install —
+no Node, no Python, no server. Or open `site/demand-calendar-standalone.html`, which is the
+same app in a single file you can email to anyone.
+
+**Want to change something?** Run Claude Code from inside this folder:
+
+```
+claude
+```
+
+It reads [CLAUDE.md](CLAUDE.md) automatically, so it already knows the project's rules —
+including the two that matter most: the Python and JavaScript analysis must stay in
+lockstep, and nothing may claim a peak the data doesn't support.
+
+Work on a branch, not `main`:
+
+```
+git checkout -b your-name/what-youre-changing
+```
+
+Then push and open a pull request. Adam merges.
+
+**After changing anything in `site/` or `data/`, rebuild:**
+
+```
+py analysis/build_site_data.py && py analysis/build_standalone.py
+```
+
+Then hard-refresh the page with **Ctrl+Shift+R** — browsers cache `data.js`, and a plain
+refresh will keep showing the previous build. Python 3 is only needed for these rebuild
+steps and the CLI analysers; viewing and editing the app itself needs neither.
+
 ## The problem
 
 Marketing teams plan content around peaks they *believe* exist ("everyone searches for
