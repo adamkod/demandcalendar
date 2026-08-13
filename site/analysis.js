@@ -509,13 +509,21 @@ function budgetState() {
     conc: Number.isFinite(s.conc) ? s.conc : 25 };
 }
 
-function allocate(months, budget, contentShare, gamma) {
+/* weeklyWeights, when supplied, replaces the month-average demand signal with one
+   built from the weekly curve — see monthWeightsFromWeekly in weeks.js for why a
+   month average can hide the best week of the year. */
+function allocate(months, budget, contentShare, gamma, weeklyWeights) {
   const idx = m => months[wrapM(m)]?.index ?? 100;
   const w = m => Math.pow(Math.max(idx(m), 1) / 100, gamma);
-  const paidRaw = [], contRaw = [];
-  for (let m = 1; m <= 12; m++) {
-    paidRaw.push(0.5 * w(m) + 0.5 * w(m + 1));   // paid leads demand by ~2–4 weeks
-    contRaw.push(w(m + 3));                       // content ranks ~3 months later
+  let paidRaw = [], contRaw = [];
+  if (weeklyWeights) {
+    paidRaw = weeklyWeights.paid.slice();
+    contRaw = weeklyWeights.content.slice();
+  } else {
+    for (let m = 1; m <= 12; m++) {
+      paidRaw.push(0.5 * w(m) + 0.5 * w(m + 1));  // paid leads demand by ~2–4 weeks
+      contRaw.push(w(m + 3));                      // content ranks ~3 months later
+    }
   }
   const norm = arr => { const s = arr.reduce((a, b) => a + b, 0); return arr.map(v => v / s); };
   const p = norm(paidRaw), c = norm(contRaw), paidShare = 1 - contentShare;

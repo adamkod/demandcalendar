@@ -153,7 +153,9 @@ function MonthDetail({ catId, monthNo, onClose, setTip }) {
   const st = budgetState();
   const headline = defaultTerm(cat);
   const ha = getAnalysis(catId, headline);
-  const alloc = allocate(ha.monthly?.months || {}, st.budget, st.mix / 100, st.conc / 10);
+  // Same weekly-aware weights the planner uses, so the drill-down agrees with it.
+  const alloc = allocate(ha.monthly?.months || {}, st.budget, st.mix / 100, st.conc / 10,
+    weeklyAllocationWeights(ha.weekly, st.conc / 10, year));
   const monthDollars = alloc.dollars[monthNo - 1];
   const split = weekSplitForMonth(weekly, monthNo, monthDollars, st.conc / 10, year);
   const hols = holidaysInMonth(year, monthNo);
@@ -593,6 +595,123 @@ function HolidayPanel({ rows }) {
     </div>`;
 }
 
+/* --------------------------- editorial pipeline -------------------------- */
+/* Answers the "what to publish" half of the brief. Related-query lists carry no
+   dates, so this ranks and buckets topics but never dates one — the deadline
+   comes from the parent term's own timing. */
+const BUCKETS = {
+  write:   { label: "Write these",     icon: "sparkles",      ink: "#059669", bg: "#ECFDF5",
+             blurb: "Rising fast, still small. New demand before the field crowds in.",
+             when: t => t ? `Ship before ${t.publishBy}.` : "Ship on an evergreen cadence." },
+  double:  { label: "Double down",     icon: "trending-up",   ink: "#2563EB", bg: "#EFF6FF",
+             blurb: "Already big and still growing. Refresh, expand, add depth.",
+             when: t => t ? `Live and updated by ${t.publishBy}.` : "Keep current year-round." },
+  refresh: { label: "Refresh",         icon: "zap",           ink: "#D97706", bg: "#FFFBEB",
+             blurb: "Large but slipping. The page exists and is losing ground.",
+             when: () => "Off-season work — use the quiet months." },
+  retire:  { label: "Retire or merge", icon: "trending-down", ink: "#94A3B8", bg: "#F8FAFC",
+             blurb: "Small and shrinking. Stop spending effort here.",
+             when: () => "No deadline. Consolidate into stronger pages." },
+};
+
+function TopicPipeline({ rows }) {
+  const [openBucket, setOpenBucket] = useState(null);
+  const withTopics = rows.filter(r => r.cat.topics?.topics?.length);
+  if (!withTopics.length) return html`
+    <div class=${CARD + " flex gap-3 p-5 text-[13px] leading-relaxed text-slate-500"}>
+      <${Icon} name="info" size=${16} className="mt-0.5 text-slate-400" />
+      <span>No related-query lists loaded for the selected categories. On the Trends
+        page, scroll to <b>Related queries</b>, switch between <b>Top</b> and
+        <b>Rising</b>, and download each — then save them into <code>data/</code> as
+        <code>related-queries-&lt;term&gt;-top.csv</code> and
+        <code>-rising.csv</code>.</span>
+    </div>`;
+
+  return html`
+    <div class="space-y-4">
+      ${withTopics.map(row => {
+        const t = theme(row.cat.id), pack = row.cat.topics;
+        const parent = getAnalysis(row.cat.id, pack.term);
+        const tim = parent.timing;
+        const publishBy = tim
+          ? (tim.precision === "week" ? fmtWeek(tim.publishWeek)
+                                      : MONTHS[(tim.rampMonth + 9) % 12])
+          : null;
+        const deadline = publishBy ? { publishBy } : null;
+        const groups = ["write", "double", "refresh", "retire"]
+          .map(b => [b, pack.topics.filter(x => x.bucket === b)])
+          .filter(([, list]) => list.length);
+        return html`
+          <div key=${row.cat.id} class=${CARD + " overflow-hidden"}>
+            <div class="flex flex-wrap items-center gap-2.5 border-b border-[#E2E8F0] px-5 py-4"
+              style=${{ background: `linear-gradient(180deg, ${t.soft}55, transparent)` }}>
+              <span class="grid h-8 w-8 place-items-center rounded-xl"
+                style=${{ background: t.soft, color: t.mid }}>
+                <${Icon} name=${t.icon} size=${16} />
+              </span>
+              <div>
+                <div class="text-[15px] font-semibold text-slate-800">
+                  ${t.label} — ${pack.topics.length} topics from “${pack.term}”
+                </div>
+                <div class="text-[11.5px] text-slate-400">
+                  ${publishBy
+                    ? `Everything in "Write these" has to be live by ${publishBy} to rank for the peak.`
+                    : "No season for this term — publish on a steady cadence."}
+                </div>
+              </div>
+            </div>
+
+            <div class="grid gap-px bg-[#E2E8F0] sm:grid-cols-2 lg:grid-cols-4">
+              ${groups.map(([b, list]) => {
+                const B = BUCKETS[b], open = openBucket === row.cat.id + b;
+                const shown = open ? list : list.slice(0, 5);
+                return html`
+                  <div key=${b} class="bg-white p-4">
+                    <div class="flex items-center gap-2">
+                      <span class="grid h-6 w-6 place-items-center rounded-lg"
+                        style=${{ background: B.bg, color: B.ink }}>
+                        <${Icon} name=${B.icon} size=${13} />
+                      </span>
+                      <span class="text-[13px] font-semibold text-slate-700">${B.label}</span>
+                      <span class="ml-auto text-[15px] font-semibold tabular-nums"
+                        style=${{ color: B.ink }}>${list.length}</span>
+                    </div>
+                    <p class="mt-2 text-[11.5px] leading-relaxed text-slate-400">${B.blurb}</p>
+                    <p class="mt-1 text-[11.5px] font-medium" style=${{ color: B.ink }}>
+                      ${B.when(deadline)}
+                    </p>
+                    <ol class="mt-3 space-y-1.5">
+                      ${shown.map((q, i) => html`
+                        <li key=${q.query} class="group flex items-baseline gap-2 text-[12px]">
+                          <span class="w-4 shrink-0 text-right tabular-nums text-slate-300">${i + 1}</span>
+                          <span class="min-w-0 flex-1 truncate text-slate-600 group-hover:text-slate-900"
+                            title=${q.query}>${q.query}</span>
+                          <span class="shrink-0 tabular-nums text-[11px] font-medium"
+                            style=${{ color: q.change > 0 ? B.ink : "#94A3B8" }}>
+                            ${q.change > 0 ? "+" : ""}${Math.round(q.change)}%
+                          </span>
+                        </li>`)}
+                    </ol>
+                    ${list.length > 5 && html`
+                      <button onClick=${() => setOpenBucket(open ? null : row.cat.id + b)}
+                        class="mt-2.5 text-[11.5px] font-medium text-slate-400 underline-offset-4 hover:text-slate-700 hover:underline">
+                        ${open ? "Show fewer" : `Show all ${list.length}`}
+                      </button>`}
+                  </div>`;
+              })}
+            </div>
+
+            <div class="flex gap-2.5 border-t border-[#E2E8F0] bg-slate-50/60 px-5 py-3 text-[11.5px] leading-relaxed text-slate-400">
+              <${Icon} name="info" size=${13} className="mt-0.5 shrink-0" />
+              <span>Related-query lists have no dates, so topics are <b>ranked and bucketed,
+                not individually scheduled</b>. They all serve the same peak; the deadline above
+                is the parent term's. Percentages are Trends' own change figures.</span>
+            </div>
+          </div>`;
+      })}
+    </div>`;
+}
+
 /* ------------------------------ scoreboard ------------------------------- */
 function Scoreboard({ cats }) {
   const counts = { CONFIRMED: 0, MISTIMED: 0, OVERRATED: 0, BUSTED: 0 };
@@ -746,7 +865,12 @@ function BudgetView({ cats, setTip }) {
   const a = getAnalysis(cat.id, term);
   const months = a.monthly?.months || {};
   const phases = buildPhases(a);
-  const alloc = allocate(months, st.budget, st.mix / 100, st.conc / 10);
+  // Prefer the weekly curve where it exists — a month average can hide the best
+  // week of the year, which for "wedding venues" is exactly what happens.
+  const wWeights = useMemo(
+    () => weeklyAllocationWeights(a.weekly, st.conc / 10, PLANNING_YEAR),
+    [a.weekly, st.conc]);
+  const alloc = allocate(months, st.budget, st.mix / 100, st.conc / 10, wWeights);
   const t = theme(cat.id);
   const [budgetText, setBudgetText] = useState(st.budget.toLocaleString("en-US"));
   useEffect(() => { setBudgetText(st.budget.toLocaleString("en-US")); }, [st.role]);
@@ -754,14 +878,54 @@ function BudgetView({ cats, setTip }) {
   const PH_TONE = { peak: t.mid, ramp: t.edge, second: t.edge, publish: t.soft,
                     cool: "#F1F5F9", off: "#F1F5F9", steady: "#F1F5F9" };
   const max = Math.max(...alloc.dollars, 1);
+
+  // Demand per month, from the same signal that drove the allocation — otherwise
+  // the chart and the table would argue with the plan sitting next to them.
+  const demandIdx = useMemo(() => {
+    const fallback = MONTHS.map((_, i) => months[i + 1]?.index ?? 100);
+    if (!wWeights) return fallback;
+    const raw = monthWeightsFromWeekly(a.weekly, 1, 0, PLANNING_YEAR);
+    return raw ? raw.map(v => Math.round(v * 1000) / 10) : fallback;
+  }, [wWeights, months, a.weekly]);
+
+  // Spend share and demand share are both "% of the annual total", so they share
+  // one axis honestly — and the gap is the point: spend sits left of demand.
+  const idxSum = demandIdx.reduce((s, v) => s + v, 0) || 1;
+  const demandShare = demandIdx.map(v => v / idxSum);
+  const peakDemandM = demandShare.indexOf(Math.max(...demandShare));
+  const peakSpendM = alloc.fracs.indexOf(Math.max(...alloc.fracs));
+  // Signed, so spend landing *after* demand reads as late rather than as an
+  // eleven-month head start.
+  let leadMonths = (peakDemandM - peakSpendM + 12) % 12;
+  if (leadMonths > 6) leadMonths -= 12;
+  // Draw demand at week resolution where we have it. Averaging it back up to
+  // months would erase the very thing that justifies the plan: "wedding venues"
+  // spends its December on one enormous week, and a December month-average of 99
+  // makes the heaviest spend of the year look unmotivated.
+  //
+  // Weekly shares are scaled to a month-equivalent (x 52/12) so both series read
+  // as "share of the annual total per month" — a flat year puts both at 8.3%.
+  const demandCurve = useMemo(() => {
+    const idx = wWeights ? weeklyIndexByYear(a.weekly) : null;
+    if (!idx || !Object.keys(idx).length) return null;
+    const wk = [];
+    for (let w = 1; w <= 52; w++) wk.push(medianWeekIndex(idx, w) ?? 100);
+    const sum = wk.reduce((x, y) => x + y, 0) || 1;
+    return wk.map((v, i) => ({ x: (i + 0.5) / 52, share: (v / sum) * (52 / 12) }));
+  }, [wWeights, a.weekly]);
+
+  // One shared ceiling so the spend bars and the demand line are read together.
+  const chartMax = Math.max(...alloc.fracs, ...demandShare,
+    ...(demandCurve ? demandCurve.map(p => p.share) : [])) * 1.1;
+
   const q = [0, 1, 2, 3].map(k => alloc.fracs.slice(k * 3, k * 3 + 3).reduce((x, y) => x + y, 0));
   const qd = [0, 1, 2, 3].map(k => alloc.dollars.slice(k * 3, k * 3 + 3).reduce((x, y) => x + y, 0));
 
   const csv = () => {
-    const rows = [["Month", "Phase", "Share", "Spend (USD)", "Seasonal index", "Rationale"]];
+    const rows = [["Month", "Phase", "Share", "Spend (USD)", "Demand index", "Rationale"]];
     for (let m = 1; m <= 12; m++)
       rows.push([MONTHS[m - 1], PHASE_META[phases[m]].label, pct(alloc.fracs[m - 1]),
-                 alloc.dollars[m - 1], months[m] ? months[m].index : "—",
+                 alloc.dollars[m - 1], demandIdx[m - 1].toFixed(1),
                  reasonFor(m, alloc, months, phases)]);
     const text = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\r\n");
     const url = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
@@ -777,6 +941,73 @@ function BudgetView({ cats, setTip }) {
         Tell it your job and your budget. It returns a month-by-month plan that buys ahead of
         demand instead of chasing it — content earliest, paid latest.
       </p>
+
+      <!-- hero band -->
+      <div class="relative mt-7 overflow-hidden rounded-2xl border border-[#E2E8F0] p-6 shadow-[0_1px_2px_rgba(15,23,42,.04),0_12px_32px_-16px_rgba(15,23,42,.14)]"
+        style=${{ background: `linear-gradient(135deg, ${t.soft} 0%, #FFFFFF 45%, ${t.soft}66 100%)` }}>
+        <div class="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full opacity-30 blur-3xl"
+          style=${{ background: t.mid }} />
+        <div class="relative flex flex-wrap items-end gap-x-10 gap-y-5">
+          <div>
+            <div class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em]"
+              style=${{ color: t.ink }}>
+              <${Icon} name=${t.icon} size=${13} /> ${t.label} · ${role.label}
+            </div>
+            <div class="mt-1 text-[46px] font-semibold leading-none tracking-[-0.03em] text-slate-800">
+              ${fmtMoney(st.budget)}
+            </div>
+            <div class="mt-1.5 text-[12.5px] text-slate-500">annual budget, allocated across 12 months</div>
+          </div>
+          <div class="flex flex-wrap gap-x-8 gap-y-4">
+            <div>
+              <div class="text-[11px] font-medium uppercase tracking-[0.07em] text-slate-400">Heaviest month</div>
+              <div class="mt-0.5 text-[22px] font-semibold text-slate-800">${MONTHS[peakSpendM]}</div>
+              <div class="text-[11.5px] text-slate-400">${fmtMoney(alloc.dollars[peakSpendM])} · ${pct(alloc.fracs[peakSpendM])}</div>
+            </div>
+            <div>
+              <div class="text-[11px] font-medium uppercase tracking-[0.07em] text-slate-400">Demand peaks</div>
+              <div class="mt-0.5 text-[22px] font-semibold text-slate-800">
+                ${a.timing ? (a.timing.precision === "week" ? fmtWeek(a.timing.peakWeek).replace("~", "")
+                                                            : MONTHS[a.timing.peakMonth - 1]) : "No season"}
+              </div>
+              <div class="text-[11.5px] text-slate-400">
+                ${!a.timing ? "flat demand, level spend"
+                  : leadMonths === 0 ? "spend lands in the peak month"
+                  : leadMonths > 0 ? `spend leads it by ${leadMonths} month${leadMonths === 1 ? "" : "s"}`
+                  : `spend trails it by ${-leadMonths} month${leadMonths === -1 ? "" : "s"}`}
+              </div>
+            </div>
+            <div>
+              <div class="text-[11px] font-medium uppercase tracking-[0.07em] text-slate-400">Split</div>
+              <div class="mt-0.5 text-[22px] font-semibold text-slate-800">${st.mix}<span class="text-[15px] text-slate-400">/${100 - st.mix}</span></div>
+              <div class="text-[11.5px] text-slate-400">content / paid</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- allocation ribbon: the whole year at a glance -->
+        <div class="relative mt-6">
+          <div class="flex h-9 gap-[2px] overflow-hidden rounded-lg">
+            ${alloc.fracs.map((f, i) => {
+              const ph = phases[i + 1];
+              return html`
+                <div key=${i} class="group relative grid place-items-center transition-all duration-200 hover:brightness-95"
+                  style=${{ flexGrow: Math.max(f, 0.001), background: PH_TONE[ph],
+                            minWidth: "8px" }}
+                  onMouseMove=${e => setTip({ x: e.clientX, y: e.clientY,
+                    html: `<b>${MONTHS[i]}</b> — ${fmtMoney(alloc.dollars[i])}<br/>`
+                      + `${pct(f)} of budget · ${PHASE_META[ph].label}` })}
+                  onMouseLeave=${() => setTip(null)}>
+                  <span class="text-[10px] font-semibold opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+                    style=${{ color: ph === "peak" ? "#fff" : t.ink }}>${MONTHS[i][0]}</span>
+                </div>`;
+            })}
+          </div>
+          <div class="mt-1.5 flex justify-between text-[10px] font-medium uppercase tracking-wider text-slate-400">
+            <span>Jan</span><span>Apr</span><span>Jul</span><span>Oct</span><span>Dec</span>
+          </div>
+        </div>
+      </div>
 
       <div class=${CARD + " mt-7 p-5"}>
         <div class="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
@@ -862,26 +1093,64 @@ function BudgetView({ cats, setTip }) {
             Download CSV
           </button>
         </div>
-        <div class="mt-5 flex h-[180px] items-end gap-1.5">
-          ${alloc.dollars.map((v, i) => html`
-            <div key=${i} class="group flex flex-1 flex-col items-center justify-end gap-1.5"
-              onMouseMove=${e => setTip({ x: e.clientX, y: e.clientY,
-                html: `<b>${MONTHS[i]}</b> — ${fmtMoney(v)}<br/>${pct(alloc.fracs[i])} of budget · ${PHASE_META[phases[i + 1]].label}` })}
-              onMouseLeave=${() => setTip(null)}>
-              <span class="text-[10.5px] font-semibold tabular-nums text-slate-500 opacity-0 transition-opacity group-hover:opacity-100">
-                ${fmtCompact(v)}
-              </span>
-              <div class="w-full max-w-[34px] rounded-t-[5px] transition-all duration-200 group-hover:brightness-95"
-                style=${{ height: Math.max((v / max) * 140, 4) + "px", background: PH_TONE[phases[i + 1]] }} />
-              <span class="text-[10.5px] font-medium text-slate-400">${MONTHS[i]}</span>
-            </div>`)}
+        <p class="mt-1 text-[12.5px] leading-relaxed text-slate-500">
+          Bars are spend, the line is demand${demandCurve ? " week by week" : ""} — both as a
+          share of their own annual total per month, so a flat year puts each at 8.3%.
+          ${a.timing
+            ? html`The bars should sit <b>to the left of</b> the line: that gap is the plan
+                buying ahead of demand rather than chasing it.`
+            : html`With no season, both run flat — there is nothing to lead.`}
+        </p>
+
+        <div class="relative mt-5 h-[200px]">
+          <!-- gridlines -->
+          ${[0, .25, .5, .75, 1].map(g => html`
+            <div key=${g} class="absolute inset-x-0 border-t border-[#F1F5F9]"
+              style=${{ bottom: (26 + g * 150) + "px" }} />`)}
+          <div class="absolute inset-x-0 bottom-[26px] border-t border-[#E2E8F0]" />
+
+          <!-- demand line, drawn over the bars -->
+          <svg class="pointer-events-none absolute inset-x-0" style=${{ bottom: "26px", height: "150px" }}
+            viewBox="0 0 1200 150" preserveAspectRatio="none" aria-hidden="true">
+            <path d=${(demandCurve
+                ? demandCurve.map((p, i) =>
+                    (i ? "L" : "M") + (p.x * 1200).toFixed(1) + " "
+                    + (150 - (p.share / chartMax) * 150).toFixed(1))
+                : demandShare.map((v, i) =>
+                    (i ? "L" : "M") + (50 + i * 100) + " "
+                    + (150 - (v / chartMax) * 150).toFixed(1))).join(" ")}
+              fill="none" stroke=${t.ink} stroke-width="2" stroke-linejoin="round"
+              stroke-linecap="round" vector-effect="non-scaling-stroke" opacity="0.85" />
+          </svg>
+
+          <div class="absolute inset-0 flex items-end gap-1.5">
+            ${alloc.dollars.map((v, i) => html`
+              <div key=${i} class="group relative flex flex-1 flex-col items-center justify-end"
+                onMouseMove=${e => setTip({ x: e.clientX, y: e.clientY,
+                  html: `<b>${MONTHS[i]}</b> — ${fmtMoney(v)}<br/>`
+                    + `spend ${pct(alloc.fracs[i])} · demand ${pct(demandShare[i])}<br/>`
+                    + `<span class="text-slate-500">${PHASE_META[phases[i + 1]].label}</span>` })}
+                onMouseLeave=${() => setTip(null)}>
+                <span class="mb-1 text-[10.5px] font-semibold tabular-nums text-slate-600 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+                  ${fmtCompact(v)}
+                </span>
+                <div class="w-full max-w-[38px] rounded-t-[5px] transition-all duration-200 group-hover:brightness-95"
+                  style=${{ height: Math.max((alloc.fracs[i] / chartMax) * 150, 4) + "px",
+                            background: PH_TONE[phases[i + 1]] }} />
+                <span class="mt-1.5 h-[16px] text-[10.5px] font-medium text-slate-400">${MONTHS[i]}</span>
+              </div>`)}
+          </div>
         </div>
+
         <div class="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-[#E2E8F0] pt-3 text-[11.5px] text-slate-400">
           ${[["peak", "Peak — heaviest flight"], ["ramp", "Pre-peak ramp"],
              ["publish", "Publish window"], ["steady", "Cool-down & always-on"]].map(([k, lbl]) => html`
             <span key=${k} class="flex items-center gap-1.5">
               <span class="h-2.5 w-2.5 rounded-[3px]" style=${{ background: PH_TONE[k] }} /> ${lbl}
             </span>`)}
+          <span class="flex items-center gap-1.5">
+            <span class="h-[2px] w-5 rounded-full" style=${{ background: t.ink }} /> demand
+          </span>
         </div>
       </div>
 
@@ -891,8 +1160,10 @@ function BudgetView({ cats, setTip }) {
             <thead>
               <tr class="border-b border-[#E2E8F0] text-left text-[11px] font-medium uppercase tracking-[0.07em] text-slate-400">
                 <th class="px-5 py-3">Month</th><th class="py-3">Phase</th>
-                <th class="py-3 text-right">Share</th><th class="py-3 text-right">Spend</th>
-                <th class="py-3 text-right">Index</th><th class="px-5 py-3">Why this number</th>
+                <th class="px-3 py-3 text-right">Share</th>
+                <th class="px-3 py-3 text-right">Spend</th>
+                <th class="px-3 py-3 text-right">Demand</th>
+                <th class="px-5 py-3">Why this number</th>
               </tr>
             </thead>
             <tbody>
@@ -907,9 +1178,9 @@ function BudgetView({ cats, setTip }) {
                         ${PHASE_META[ph].label}
                       </span>
                     </td>
-                    <td class="py-3 text-right tabular-nums text-slate-500">${pct(alloc.fracs[i])}</td>
-                    <td class="py-3 text-right font-semibold tabular-nums text-slate-800">${fmtMoney(alloc.dollars[i])}</td>
-                    <td class="py-3 text-right tabular-nums text-slate-500">${months[m] ? months[m].index : "—"}</td>
+                    <td class="px-3 py-3 text-right tabular-nums text-slate-500">${pct(alloc.fracs[i])}</td>
+                    <td class="px-3 py-3 text-right font-semibold tabular-nums text-slate-800">${fmtMoney(alloc.dollars[i])}</td>
+                    <td class="px-3 py-3 text-right tabular-nums text-slate-500">${demandIdx[i].toFixed(1)}</td>
                     <td class="px-5 py-3 text-[12.5px] leading-relaxed text-slate-500">${reasonFor(m, alloc, months, phases)}</td>
                   </tr>`;
               })}
@@ -917,8 +1188,8 @@ function BudgetView({ cats, setTip }) {
             <tfoot>
               <tr class="border-t border-[#E2E8F0] bg-slate-50/60 font-semibold text-slate-700">
                 <td class="px-5 py-3">Total</td><td/>
-                <td class="py-3 text-right tabular-nums">100.0%</td>
-                <td class="py-3 text-right tabular-nums">${fmtMoney(st.budget)}</td>
+                <td class="px-3 py-3 text-right tabular-nums">100.0%</td>
+                <td class="px-3 py-3 text-right tabular-nums">${fmtMoney(st.budget)}</td>
                 <td/><td class="px-5 py-3 text-[12px] font-normal text-slate-400">
                   ${t.label} · “${term}” · ${role.label}</td>
               </tr>
@@ -1071,6 +1342,14 @@ function App() {
             sub="Generated from the analysis, not written by hand — which is why some of these
                  cards report a peak that isn't there.">
             <${CalloutCards} callouts=${callouts} />
+          <//>
+
+          <${Section} eyebrow="Editorial" title="What to publish"
+            sub=${html`Rising and top related queries, sorted into what to write, what to
+                 reinforce, what to refresh and what to drop. The deadline comes from the
+                 parent term's own timing — <b class="text-slate-600">content has to be live
+                 before the ramp</b>, not during it.`}>
+            <${TopicPipeline} rows=${rows} />
           <//>
 
           <${Section} eyebrow="Holidays" title="Does the holiday actually move demand?"

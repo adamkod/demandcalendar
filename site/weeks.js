@@ -199,5 +199,40 @@ function weekSplitForMonth(weekly, monthNo, monthDollars, gamma, year) {
     index: Math.round(at(w.week) * 10) / 10 }));
 }
 
+/* Monthly spend weights derived from the weekly curve.
+ *
+ * A monthly index can hide the thing that matters most. "wedding venues" grades
+ * December OFF-SEASON at 86, because weeks 49-50 are the year's floor at 74 —
+ * yet week 52 is the year's ceiling at 140. Allocating from the month average
+ * starves the single most valuable week of the year and pushes the money into
+ * June instead. Where a readable weekly series exists it is simply the better
+ * signal, so weights are built from it: each month scores the demand its weeks
+ * can still influence, `leadWeeks` ahead of the spend.
+ */
+function monthWeightsFromWeekly(weekly, gamma, leadWeeks, year) {
+  const idx = weeklyIndexByYear(weekly);
+  if (!Object.keys(idx).length) return null;
+  const at = w => medianWeekIndex(idx, w) ?? 100;
+  const out = [];
+  for (let m = 1; m <= 12; m++) {
+    const weeks = weeksInMonth(year, m);
+    if (!weeks.length) return null;
+    const vals = weeks.map(w =>
+      Math.pow(Math.max(at(w.week + leadWeeks), 1) / 100, gamma));
+    out.push(vals.reduce((a, b) => a + b, 0) / vals.length);
+  }
+  return out;
+}
+
+/* Paid buys demand about two weeks out; content needs about a quarter to rank. */
+const PAID_LEAD_WEEKS = 2, CONTENT_LEAD_WEEKS = 13;
+
+function weeklyAllocationWeights(weekly, gamma, year) {
+  if (!weekly || !weekly.resolution?.usable) return null;
+  const paid = monthWeightsFromWeekly(weekly, gamma, PAID_LEAD_WEEKS, year);
+  const content = monthWeightsFromWeekly(weekly, gamma, CONTENT_LEAD_WEEKS, year);
+  return paid && content ? { paid, content } : null;
+}
+
 /* The year a marketing team would be planning: the next full calendar year. */
 const PLANNING_YEAR = new Date().getUTCFullYear() + 1;

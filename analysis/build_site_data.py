@@ -201,9 +201,93 @@ def scan_data_dir():
     return found
 
 
+def _pct(cell):
+    """'850%' -> 850.0. Trends writes 'Breakout' for anything over ~5000%."""
+    c = (cell or "").strip().replace("%", "").replace(",", "")
+    if c.lower() == "breakout":
+        return 5000.0
+    try:
+        return float(c)
+    except ValueError:
+        return 0.0
+
+
+def scan_related_queries():
+    """Related-query lists -> an editorial backlog, keyed by category.
+
+    Files are named `related-queries-<term-slug>-top.csv` / `-rising.csv`, where
+    the slug is the parent search term with spaces as hyphens. These lists carry
+    no dates, so they can rank and bucket topics but must never be used to date
+    one — the parent term's timing supplies the deadline.
+
+    Buckets:
+      write      in the rising list and still small — new demand, low competition
+      double     already large and still growing — reinforce what works
+      refresh    large but declining — the page exists and is losing ground
+      retire     small and declining — stop spending effort here
+    """
+    found = {}
+    for name in sorted(os.listdir(DATA_DIR)):
+        low = name.lower()
+        if not low.startswith("related-queries-") or not low.endswith(".csv"):
+            continue
+        kind = "rising" if low.endswith("-rising.csv") else \
+               "top" if low.endswith("-top.csv") else None
+        if kind is None:
+            continue
+        slug = low[len("related-queries-"):-len(f"-{kind}.csv")]
+        term = slug.replace("-", " ")
+        cat_id = TERM_TO_CAT.get(term)
+        if cat_id is None:
+            print(f"  note: {name} -> unknown term “{term}”, skipped")
+            continue
+        with open(os.path.join(DATA_DIR, name), newline="", encoding="utf-8-sig") as f:
+            rows = [r for r in csv.reader(f) if len(r) >= 3]
+        if rows and rows[0][0].strip().lower() == "query":
+            rows = rows[1:]
+        rec = found.setdefault(cat_id, {"term": term, "queries": {}})
+        for q, interest, change in rows:
+            q = q.strip()
+            if not q:
+                continue
+            entry = rec["queries"].setdefault(
+                q, {"query": q, "interest": 0, "change": 0.0, "lists": []})
+            try:
+                entry["interest"] = max(entry["interest"], int(float(interest)))
+            except ValueError:
+                pass
+            entry["change"] = _pct(change)
+            if kind not in entry["lists"]:
+                entry["lists"].append(kind)
+
+    out = {}
+    for cat_id, rec in found.items():
+        topics = []
+        for e in rec["queries"].values():
+            rising_only = "rising" in e["lists"] and "top" not in e["lists"]
+            if e["change"] < 0:
+                bucket = "refresh" if e["interest"] >= 20 else "retire"
+            elif rising_only or e["interest"] < 20:
+                bucket = "write"
+            else:
+                bucket = "double"
+            topics.append({**e, "bucket": bucket})
+        # Rank inside each bucket by what makes it actionable: growth for new
+        # topics, size for everything that already exists.
+        order = {"write": lambda t: (-t["change"], -t["interest"]),
+                 "double": lambda t: (-t["interest"], -t["change"]),
+                 "refresh": lambda t: (-t["interest"],),
+                 "retire": lambda t: (-t["interest"],)}
+        topics.sort(key=lambda t: (["write", "double", "refresh", "retire"]
+                                   .index(t["bucket"]),) + order[t["bucket"]](t))
+        out[cat_id] = {"term": rec["term"], "topics": topics}
+    return out
+
+
 def build(force_sample=False):
     out = {"version": 1, "generated": date.today().isoformat(), "categories": []}
     scanned = {} if force_sample else scan_data_dir()
+    topics = {} if force_sample else scan_related_queries()
     for cat in CATEGORIES:
         real = scanned.get(cat["id"], {"monthly": {}, "weekly": {}})
         terms = []
@@ -228,7 +312,8 @@ def build(force_sample=False):
                 terms.append(entry)
         out["categories"].append({
             "id": cat["id"], "label": cat["label"],
-            "assumed": cat["assumed"], "terms": terms})
+            "assumed": cat["assumed"], "terms": terms,
+            "topics": topics.get(cat["id"])})
     return out
 
 
