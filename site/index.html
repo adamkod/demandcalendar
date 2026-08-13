@@ -463,13 +463,18 @@ function monthlyIndex(dates, values) {
   // (a 2021-08..2026-08 export covers Jan-Jul in six years but Sep-Dec in five, so
   // a term that doubles mid-window gets a fake first-half peak). Pooled fallback
   // only when there aren't two complete years to average.
+  // Median across years, matching weeklyCurve. The mean lets one extreme year set
+  // the headline: Dobbs puts vasectomy's June 2022 at a within-year index of 166
+  // against ~100 elsewhere, and the mean reads 117 — peak territory. The label
+  // would still say INCONSISTENT, but this number drives the heatmap colour and
+  // the budget allocator, and the allocator reads numbers, not labels.
   const index = {};
   const years = Object.keys(perYear);
   if (years.length >= 2) {
     for (let m = 1; m <= 12; m++) {
       const vals = years.filter(y => perYear[y][m] !== undefined)
                         .map(y => perYear[y][m]);
-      if (vals.length) index[m] = mean(vals);
+      if (vals.length) index[m] = median(vals);
     }
   } else {
     const overall = mean(values);
@@ -606,7 +611,10 @@ function analyzeTerm(term) {
       ...rampAndPeak(curve),
       anomalies: findAnomalies(dates, vals, isoWeek) };
   }
-  a.resolution = a.weekly?.resolution ?? a.monthly?.resolution ?? null;
+  // Report the monthly series' resolution: it drives the seasonal index, the
+  // heatmap and the budget. A term can now have a clean standalone monthly export
+  // and a squashed weekly one left over from a comparison export.
+  a.resolution = a.monthly?.resolution ?? a.weekly?.resolution ?? null;
 
   // a.timing is null when the data gives no season worth timing against. Every
   // consumer must handle that — inventing a date here is the failure mode this
@@ -617,8 +625,10 @@ function analyzeTerm(term) {
   // can never date a campaign against a month it has just labelled NO PEAK.
   const peakMonthInfo = a.weekly?.defined
     ? a.monthly?.months?.[monthOfWeek(a.weekly.peakWeek)] : null;
-  const weeklyVetoed = a.weekly?.defined && a.monthly
-    && !["REAL PEAK", "MILD BUMP"].includes(peakMonthInfo?.label);
+  // A weekly series too coarse to read cannot date a ramp either.
+  const weeklyTooCoarse = a.weekly?.defined && !a.weekly.resolution.usable;
+  const weeklyVetoed = a.weekly?.defined && (weeklyTooCoarse || (a.monthly
+    && !["REAL PEAK", "MILD BUMP"].includes(peakMonthInfo?.label)));
   if (weeklyVetoed) a.weeklyVeto = { label: peakMonthInfo?.label || "NO PEAK",
     peakWeek: a.weekly.peakWeek, amplitude: a.weekly.amplitude };
 

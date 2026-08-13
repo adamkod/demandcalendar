@@ -232,6 +232,8 @@ def main():
         print(f"  {c['label']:<12} {', '.join(bits)}")
     print("  R = real export, S = synthetic sample; first letter monthly, "
           "second weekly")
+    print("\n  Reload site/index.html with Ctrl+Shift+R — browsers cache data.js "
+          "and a\n  plain refresh will keep showing the previous build.")
 
 
 if __name__ == "__main__":

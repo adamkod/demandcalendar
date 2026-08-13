@@ -109,11 +109,18 @@ def monthly_index(dates, values):
                        for m, vs in months.items()}
 
     if len(per_year) >= 2:
+        # Median across years, matching weekly_curve. The mean lets a single
+        # extreme year set the headline: Dobbs puts vasectomy's June 2022 at a
+        # within-year index of 166 against ~100 in every other year, and the mean
+        # of those reads 117 -- peak territory. The consistency score would still
+        # label it INCONSISTENT, but the index itself feeds the heatmap colour and
+        # the budget allocator, and the allocator reads numbers, not labels. It
+        # would have moved real money into June because of one court ruling.
         index = {}
         for m in range(1, 13):
             vals = [yi[m] for yi in per_year.values() if m in yi]
             if vals:
-                index[m] = statistics.mean(vals)
+                index[m] = statistics.median(vals)
     else:
         overall = statistics.mean(values)
         index = {m: statistics.mean(vs) / overall * 100

@@ -23,6 +23,32 @@ Then run:
 python analysis/seasonality.py data/fitness-terms-us-5yr.csv
 ```
 
+## Give a small term its own export
+
+Trends scales every term in a comparison against the largest one. Put "vasectomy"
+next to "marriage" and it arrives squashed into a range of 4–20, where one integer
+step is 20% of its own mean and the seasonal index is mostly rounding error. The
+same term exported **alone** spans 43–100, where a step is 2% — the difference
+between unreadable and trustworthy.
+
+Rule of thumb: only compare terms within about 5× of each other in popularity.
+Anything smaller gets its own file. The dashboard flags a term in orange when one
+integer step exceeds 8% of its mean.
+
+## Both file layouts work
+
+You can drop in either:
+
+- **A multi-term comparison export** (the normal way) — each term is matched to its
+  category by name, so one file can feed several categories at once.
+- **A single-category file** named `<category>--monthly.csv` or
+  `<category>--weekly.csv`, which wins over any comparison file for the same term.
+
+Files whose terms aren't recognised are ignored, so related-query lists and other
+CSVs can sit in `data/` harmlessly. After adding files run
+`py analysis/build_site_data.py`, then reload the page with **Ctrl+Shift+R** —
+browsers cache `data.js` and a plain refresh shows the old build.
+
 ## Things to know about Trends data
 
 - Values are a **relative index 0–100**, where 100 = the highest point *in your
