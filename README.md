@@ -37,18 +37,31 @@ index (0–100) for any term, downloadable as CSV. See
 
 ## The dashboard
 
-Open `site/index.html` in any browser — no server, no install. Four categories are built
-in: **births, divorces, marriages, vasectomies**. Three tabs do the work:
+Open `site/index.html` in any browser — no server, no install, no build step. Four
+categories are built in: **births, divorces, marriages, vasectomies**.
 
-**Overview (home).** All four categories on one January-to-December heatmap, one row each,
-darker = hotter than that term's own yearly average. A filled ▲ marks a peak that survives
-the reality test; a hollow △ marks a year's high point that *isn't* a real peak. Below it,
-key dates per category (peak, ramp start, SEO publish-by) and an assumption scoreboard
-counting how many of your assumed peaks came back CONFIRMED / MISTIMED / OVERRATED / BUSTED.
+Built with **React 18 and Tailwind CSS**, both vendored into `site/vendor/` rather than
+installed. There is no Node toolchain here: the app has to keep opening by double-click and
+exporting to a single shareable file, which a bundler would break. `htm` supplies JSX-like
+syntax without a compile step, so `app.js` reads as ordinary React components. Icons are
+Lucide glyphs inlined as SVG paths.
 
-**Category tabs.** One category at a time: term picker, average-year weekly curve with
-publish/ramp/peak markers, the long-horizon monthly index, full history with one-off spikes
-flagged, an editable assumed-peaks panel, and the month-by-month editorial calendar.
+`app.js` renders and nothing else. Every number comes from `analysis.js`, which mirrors
+`analysis/seasonality.py` — **change a threshold in one and you must change it in the other**,
+or the CLI and the app will disagree about the same data.
+
+Three surfaces do the work:
+
+**Calendar.** Filter pills for Birth, Marriage, Divorce and Vasectomies drive a
+January-to-December seasonality heatmap — one row per category, each on its own pastel
+gradient, indexed to its own yearly average so rows can be read side by side. Below it,
+callout cards generated *from the analysis rather than written by hand*, which is why some
+of them report that a peak isn't there. Then the assumption scoreboard
+(CONFIRMED / MISTIMED / OVERRATED / BUSTED) and a detail card per category with a sparkline,
+key dates, the monthly index, and a low-resolution warning where one applies.
+
+Colour never carries meaning alone: every category pairs its hue with a Lucide icon and a
+text label, so the palette stays readable in greyscale and for colour-blind viewers.
 
 **Budget planner.** Pick your job (wedding planner, family law attorney, urology clinic,
 baby brand, …) and enter a budget. It returns a month-by-month spend plan with dollar
@@ -85,7 +98,11 @@ demand-calendar/
 │   ├── HOW-TO-DOWNLOAD.md     ← step-by-step Google Trends export guide
 │   └── sample_multiTimeline.csv  ← synthetic sample so the script runs out of the box
 ├── site/
-│   ├── index.html             ← the dashboard — open it directly, no server needed
+│   ├── index.html             ← shell — open it directly, no server needed
+│   ├── app.js                 ← React UI (rendering only)
+│   ├── analysis.js            ← the engine; mirrors analysis/seasonality.py
+│   ├── icons.js               ← inlined Lucide glyphs
+│   ├── vendor/                ← React, htm, Tailwind — vendored for offline use
 │   ├── data.js                ← generated; do not hand-edit
 │   └── demand-calendar-standalone.html  ← generated; one file to share
 └── output/                    ← generated calendars land here

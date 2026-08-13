@@ -63,10 +63,17 @@ output.
 
 ## The dashboard
 
-`site/index.html` is the deliverable interface — self-contained, opens with no server.
-Tabs: **Overview** (all four categories on one Jan–Dec heatmap + assumption scoreboard),
-one tab per category (births, divorces, marriages, vasectomies), and **Budget planner**
-(role + budget → month-by-month spend plan, phase-colored chart, CSV export).
+`site/index.html` is the deliverable interface — opens with no server and no build step.
+React 18 + Tailwind, both vendored in `site/vendor/`; `htm` gives JSX-like syntax without a
+compiler. Do **not** introduce a bundler: the project depends on opening by double-click and
+exporting to one shareable file.
+
+Layout: **Calendar** (filter pills → Jan–Dec heatmap, data-generated callout cards,
+assumption scoreboard, per-category detail) and **Budget planner** (role + budget →
+month-by-month spend plan, phase-coloured chart, CSV export).
+
+`site/app.js` renders only. `site/analysis.js` holds every calculation and mirrors
+`analysis/seasonality.py`. Keep them in lockstep.
 
 To refresh it after adding files to `data/`:
 
@@ -99,3 +106,8 @@ stored in localStorage as an overlay and never touches `data/`.
   calendar table alone and know what to do each month.
 - The budget planner allocates a fixed budget across the year. It is not a forecast
   and says nothing about ROI, conversion rates, or revenue — do not present it as one.
+- Callout cards are generated from the analysis, never hand-authored. If a design or
+  copy request names a specific spike ("March vasectomy surge", "late-summer birth
+  peak"), check it against the data first — for these four categories most such peaks
+  are busted, and writing them in as static copy would make the app assert the very
+  thing it exists to disprove.
