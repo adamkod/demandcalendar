@@ -1260,7 +1260,7 @@ function ImportDialog({ cats, open, onClose, onDone }) {
           <div class=${"mt-4 rounded-xl p-3 text-[12.5px] leading-relaxed "
             + (msg.ok ? "bg-emerald-50 text-emerald-800" : "bg-rose-50 text-rose-800")}>${msg.text}</div>`}
         <div class="mt-5 flex justify-end gap-2">
-          <button onClick=${() => { localStorage.removeItem(LS_IMPORT); onDone(); }}
+          <button onClick=${() => { forget(LS_IMPORT); onDone(); }}
             class="rounded-full px-3.5 py-2 text-[13px] font-medium text-slate-500 hover:text-slate-800">
             Reset imports
           </button>

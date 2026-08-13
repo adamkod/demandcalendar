@@ -8,3 +8,6 @@ venv/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# local host-wrapper simulation output
+site/hostcheck.html

@@ -330,9 +330,15 @@ function analyzeTerm(term) {
 
 /* ============================ state & data ================================ */
 const LS_IMPORT = "dc_import_v1", LS_ASSUMED = "dc_assumed_v1", LS_THEME = "dc_theme";
+/* Every localStorage touch is guarded. Reading was already, but writing was not,
+   and a hosted copy can run in a sandbox where the property itself throws on
+   access. Persistence is a convenience here; losing it must never take the page
+   down with it. */
 const store = k => { try { return JSON.parse(localStorage.getItem(k)) || {}; }
                      catch { return {}; } };
-const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); }
+                         catch { /* private mode, quota, or sandboxed */ } };
+const forget = k => { try { localStorage.removeItem(k); } catch { /* as above */ } };
 
 function mergedData() {
   const overlay = store(LS_IMPORT);
