@@ -204,6 +204,40 @@ def ramp_and_peak(curve):
             "ramp_lead_weeks": lead, "amplitude": round(amplitude, 3)}
 
 
+def week_recurrence(dates, values, week):
+    """Does this ISO week actually recur, year over year?
+
+    Tests the peak week directly on the weekly rows. The monthly label used to
+    stand in for this and it was the wrong instrument: "wedding venues" peaks in
+    the week of 27 December, inside a December the monthly classifier grades
+    OFF-SEASON because its other three weeks are the year's floor. The proxy
+    would have discarded the sharpest, most consistent peak in the data for
+    being in the "wrong" month. Same bar as everywhere else, measured at the
+    resolution the claim is made at. Returns None when there are too few
+    complete years to judge.
+    """
+    by_year = defaultdict(lambda: {"weeks": {}, "vals": []})
+    for d, v in zip(dates, values):
+        rec = by_year[d.year]
+        rec["weeks"][min(d.isocalendar()[1], 52)] = v
+        rec["vals"].append(v)
+    w = (week - 1) % 52 + 1
+    vals = []
+    for rec in by_year.values():
+        if len(rec["vals"]) < 26 or w not in rec["weeks"]:
+            continue
+        m = statistics.mean(rec["vals"])
+        if m:
+            vals.append(rec["weeks"][w] / m * 100)
+    if len(vals) < 3:
+        return None
+    med = statistics.median(vals)
+    hits = sum(1 for v in vals if v >= MILD_BUMP_INDEX)
+    consistency = hits / len(vals)
+    return {"median": round(med, 1), "years": len(vals), "consistency": consistency,
+            "passes": med >= MILD_BUMP_INDEX and consistency >= CONSISTENCY_REQUIRED}
+
+
 def week_to_month(week):
     """Calendar month an ISO week falls in (reference year, good enough to bucket)."""
     return date.fromordinal(date(2026, 1, 1).toordinal() + (week - 1) * 7 + 3).month
@@ -329,16 +363,26 @@ def analyze(path):
         }
         if gran == "weekly":
             timing = ramp_and_peak(weekly_curve(dates, values))
-            # The weekly amplitude test measures shape; the monthly classifier
-            # tests whether the shape recurs. Let a ramp stand only when both
-            # agree, so the report can never date a campaign against a month it
-            # has just labelled NO PEAK.
+            # The amplitude test measures shape; this tests whether the shape
+            # recurs, so a ramp is never dated against a one-year accident.
             if timing["defined"]:
-                pm = months.get(week_to_month(timing["peak_week"]), {})
-                if pm.get("label") not in ("REAL PEAK", "MILD BUMP"):
-                    timing = {"defined": False, "peak_week": timing["peak_week"],
-                              "amplitude": timing["amplitude"], "vetoed": True,
-                              "veto_label": pm.get("label", "NO PEAK")}
+                rec = week_recurrence(dates, values, timing["peak_week"])
+                if rec is not None:
+                    if not rec["passes"]:
+                        timing = {"defined": False, "peak_week": timing["peak_week"],
+                                  "amplitude": timing["amplitude"], "vetoed": True,
+                                  "veto_label": f"that week recurs in only "
+                                                f"{rec['consistency']:.0%} of "
+                                                f"{rec['years']} years"}
+                else:
+                    # Too few complete years to judge the week; fall back to the
+                    # monthly verdict for the month the peak falls in.
+                    pm = months.get(week_to_month(timing["peak_week"]), {})
+                    if pm.get("label") not in ("REAL PEAK", "MILD BUMP"):
+                        timing = {"defined": False, "peak_week": timing["peak_week"],
+                                  "amplitude": timing["amplitude"], "vetoed": True,
+                                  "veto_label": "that month grades "
+                                                + pm.get("label", "NO PEAK")}
             entry["timing_vetoed"] = timing.get("vetoed", False)
             entry["veto_label"] = timing.get("veto_label")
             entry.update({
@@ -426,11 +470,9 @@ def print_report(report):
         elif t["granularity"] == "weekly" and t.get("timing_vetoed"):
             print(f"\nNo usable ramp:  the average year does rise "
                   f"{t['amplitude'] * 100:.0f}% into week {t['peak_week']} "
-                  f"({t['peak_week_approx']}), but that")
-            print(f"                 month grades {t['veto_label']} — the rise does "
-                  "not repeat in enough")
-            print("                 years to plan against. Treat it as noise, not "
-                  "a season.")
+                  f"({t['peak_week_approx']}), but")
+            print(f"                 {t['veto_label']} — not enough to plan against.")
+            print("                 Treat it as noise, not a season.")
         elif t["granularity"] == "weekly":
             print(f"\nNo usable ramp:  the average year peaks only "
                   f"{t['amplitude'] * 100:.0f}% above its own median "

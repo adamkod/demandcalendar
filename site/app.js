@@ -703,6 +703,14 @@ function CategoryCard({ row, setTip }) {
              stat("Publish", "Any time", "evergreen cadence")]}
       </div>
       <div class="px-5 pb-5"><${MonthlyBars} row=${row} setTip=${setTip} /></div>
+      ${!timing && a.weeklyVeto && html`
+        <div class="mx-5 mb-5 flex gap-2.5 rounded-xl border border-[#E2E8F0] bg-slate-50 p-3 text-[12px] leading-relaxed text-slate-500">
+          <${Icon} name="info" size=${15} className="mt-px text-slate-400" />
+          <span>The average year <i>does</i> rise
+            ${Math.round((a.weeklyVeto.amplitude || 0) * 100)}% into
+            ${fmtWeek(a.weeklyVeto.peakWeek)} — but ${a.weeklyVeto.label}. Markers are
+            withheld rather than dating a campaign against noise.</span>
+        </div>`}
       ${res && !res.usable && html`
         <div class="mx-5 mb-5 flex gap-2.5 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[12px] leading-relaxed text-amber-900">
           <${Icon} name="triangle-alert" size=${15} className="mt-px text-amber-500" />

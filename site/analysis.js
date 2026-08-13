@@ -210,6 +210,42 @@ const fmtDate = d => `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFu
 const fmtMonthYear = d => `${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 const wrapW = w => ((w - 1) % 52 + 52) % 52 + 1;
 
+/* Does this ISO week actually recur, year over year?
+ *
+ * Tests the peak week directly on the weekly rows. The monthly label used to
+ * stand in for this, and it was the wrong instrument: "wedding venues" peaks in
+ * the week of 27 December, which sits in a December the monthly classifier
+ * grades OFF-SEASON because the other three weeks are the year's floor. The
+ * proxy would have thrown away the sharpest, most consistent peak in the whole
+ * data set for being in the "wrong" month. Same bar as everywhere else —
+ * MILD_BUMP_INDEX, present in CONSISTENCY_REQUIRED of years — just measured at
+ * the resolution the claim is actually made at.
+ */
+function weekRecurrence(weekly, week) {
+  const byYear = {};
+  weekly.dates.forEach((d, i) => {
+    const y = d.getUTCFullYear();
+    (byYear[y] ??= { weeks: {}, vals: [] });
+    byYear[y].weeks[isoWeek(d)] = weekly.vals[i];
+    byYear[y].vals.push(weekly.vals[i]);
+  });
+  const w = ((week - 1) % 52 + 52) % 52 + 1;
+  const vals = [];
+  for (const y in byYear) {
+    const rec = byYear[y];
+    if (rec.vals.length < 26) continue;            // ragged edge year
+    const m = mean(rec.vals);
+    if (!m || rec.weeks[w] === undefined) continue;
+    vals.push(rec.weeks[w] / m * 100);
+  }
+  if (vals.length < 3) return null;                // too few years to judge
+  const med = median(vals);
+  const hits = vals.filter(v => v >= MILD_BUMP_INDEX).length;
+  const consistency = hits / vals.length;
+  return { median: Math.round(med * 10) / 10, years: vals.length, consistency,
+           passes: med >= MILD_BUMP_INDEX && consistency >= CONSISTENCY_REQUIRED };
+}
+
 function analyzeTerm(term) {
   const a = { name: term.name };
   if (term.monthly) {
@@ -239,13 +275,28 @@ function analyzeTerm(term) {
   // The weekly amplitude test measures shape; the monthly classifier tests
   // whether that shape recurs. A ramp stands only when both agree, so the site
   // can never date a campaign against a month it has just labelled NO PEAK.
-  const peakMonthInfo = a.weekly?.defined
-    ? a.monthly?.months?.[monthOfWeek(a.weekly.peakWeek)] : null;
   // A weekly series too coarse to read cannot date a ramp either.
   const weeklyTooCoarse = a.weekly?.defined && !a.weekly.resolution.usable;
-  const weeklyVetoed = a.weekly?.defined && (weeklyTooCoarse || (a.monthly
-    && !["REAL PEAK", "MILD BUMP"].includes(peakMonthInfo?.label)));
-  if (weeklyVetoed) a.weeklyVeto = { label: peakMonthInfo?.label || "NO PEAK",
+  let weeklyVetoed = false, vetoLabel = null;
+  if (a.weekly?.defined) {
+    const rec = weeklyTooCoarse ? null : weekRecurrence(a.weekly, a.weekly.peakWeek);
+    a.weekRecurrence = rec;
+    if (weeklyTooCoarse) {
+      weeklyVetoed = true;
+      vetoLabel = "series too coarse to read";
+    } else if (rec) {
+      weeklyVetoed = !rec.passes;
+      vetoLabel = `that week recurs in only ${Math.round(rec.consistency * 100)}% of `
+        + `${rec.years} years`;
+    } else {
+      // Too few complete years to judge the week directly; fall back to the
+      // monthly verdict for the month the peak falls in.
+      const info = a.monthly?.months?.[monthOfWeek(a.weekly.peakWeek)];
+      weeklyVetoed = !!a.monthly && !["REAL PEAK", "MILD BUMP"].includes(info?.label);
+      vetoLabel = `that month grades ${info?.label || "NO PEAK"}`;
+    }
+  }
+  if (weeklyVetoed) a.weeklyVeto = { label: vetoLabel,
     peakWeek: a.weekly.peakWeek, amplitude: a.weekly.amplitude };
 
   if (a.weekly?.defined && !weeklyVetoed) {
