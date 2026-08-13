@@ -21,6 +21,7 @@ import json
 import math
 import os
 import random
+import statistics
 import sys
 from datetime import date, timedelta
 
@@ -35,13 +36,13 @@ OUT_PATH = os.path.join(ROOT, "site", "data.js")
 # class assumes exist. Months are 1-12.
 CATEGORIES = [
     {"id": "births", "label": "Births",
-     "terms": ["births", "pregnancy test", "baby names"],
+     "terms": ["birth", "births", "pregnancy test", "baby names"],
      "assumed": [{"name": "September baby boom", "month": 9}]},
     {"id": "divorces", "label": "Divorces",
      "terms": ["divorce", "divorce lawyer"],
      "assumed": [{"name": "“Divorce Month” January", "month": 1}]},
     {"id": "marriages", "label": "Marriages",
-     "terms": ["marriage", "wedding venues", "engagement rings"],
+     "terms": ["wedding", "marriage", "wedding venues", "engagement rings"],
      "assumed": [{"name": "June wedding season", "month": 6}]},
     {"id": "vasectomies", "label": "Vasectomies",
      "terms": ["vasectomy", "vasectomy cost"],
@@ -168,17 +169,33 @@ def scan_data_dir():
     paths = sorted(f for f in os.listdir(DATA_DIR) if f.lower().endswith(".csv"))
     # generic files first; explicit `<category>--<granularity>.csv` last so they win
     explicit = {f"{c['id']}--{g}.csv" for c in CATEGORIES for g in ("monthly", "weekly")}
+
+    def quality(vals):
+        """Rank a candidate series for the same term: readable resolution first,
+        then length. Resolution has to come first — a term squashed by a bigger
+        comparison term is unusable at any length. Length breaks the tie, so a
+        redundant short solo export cannot silently throw away years of history."""
+        m = statistics.mean(vals) if vals else 0
+        step = 100 / m if m else float("inf")
+        return (1 if step <= 8.0 else 0, len(vals))
+
     for name in sorted(paths, key=lambda n: n.lower() in explicit):
         path = os.path.join(DATA_DIR, name)
         gran = detect_granularity(path)
         if gran is None:
             continue
-        forced = name.lower().split("--")[0] if name.lower() in explicit else None
+        is_explicit = name.lower() in explicit
+        forced = name.lower().split("--")[0] if is_explicit else None
         dates, series = parse_trends_csv(path)
         iso = [d.isoformat() for d in dates]
         for term, vals in series.items():
             cat_id = forced or TERM_TO_CAT.get(term.lower())
             if cat_id is None:
+                continue
+            prev = found[cat_id][gran].get(term)
+            # An explicitly named per-category file always wins; otherwise the
+            # better series does.
+            if prev and not is_explicit and quality(vals) <= quality(prev["values"]):
                 continue
             found[cat_id][gran][term] = {"source": name, "dates": iso, "values": vals}
     return found

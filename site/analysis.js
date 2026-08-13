@@ -349,10 +349,18 @@ function verdictFor(catId, assumption) {
     const info = months[m];
     if (info?.label === "REAL PEAK" && !confirmed)
       confirmed = { term: t.name, info };
-    for (let x = 1; x <= 12; x++)
-      if (months[x]?.label === "REAL PEAK" && near(x) > 0 && near(x) <= 2
-          && (!shifted || months[x].index > shifted.info.index))
-        shifted = { term: t.name, month: x, info: months[x] };
+    // A neighbouring month counts as "you had the season, wrong month" if it is
+    // a real peak, or a mild bump that shows up in nearly every year. The second
+    // case matters: "wedding" bumps every single July, and telling someone their
+    // June assumption is merely overrated would bury the one-month correction.
+    for (let x = 1; x <= 12; x++) {
+      const inf = months[x];
+      if (!inf || near(x) === 0 || near(x) > 2) continue;
+      const strong = inf.label === "REAL PEAK"
+        || (inf.label === "MILD BUMP" && inf.consistency >= 0.75);
+      if (strong && (!shifted || inf.index > shifted.info.index))
+        shifted = { term: t.name, month: x, info: inf };
+    }
     if (info?.label === "MILD BUMP" && !mild) mild = { term: t.name, info };
   }
   // A real peak somewhere else in the year is the most useful thing we can say
