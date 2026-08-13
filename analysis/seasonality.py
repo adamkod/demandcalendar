@@ -35,8 +35,13 @@ RAMP_FRACTION = 0.5         # ramp starts when curve crosses halfway baseline->p
 
 # Anomaly detection (see find_anomalies for why this is median-based, not mean-based)
 ANOMALY_Z = 3.5             # modified z-score, Iglewicz & Hoaglin convention
-ANOMALY_ABS_FLOOR = 15      # ...and at least this many index points above normal
+ANOMALY_FLOOR_FRAC = 0.30   # ...and a gap of at least 30% of the series' own mean
+ANOMALY_MIN_POINTS = 3      # ...but never fewer than this many index points
 ANOMALY_RATIO = 1.5         # ...and at least this multiple of the week's median
+
+# Ramp timing is only meaningful on a curve that actually moves. Below this
+# peak-over-median amplitude the "ramp" is chasing noise, so we decline to date it.
+MIN_RAMP_AMPLITUDE = 0.10   # smoothed peak must sit >= 10% above the curve's median
 
 
 def parse_trends_csv(path):
@@ -117,20 +122,41 @@ def classify_months(index, per_year):
 
 
 def weekly_curve(dates, values):
-    """Average value per ISO week across years, lightly smoothed."""
+    """Typical value per ISO week across years, lightly smoothed.
+
+    Takes the median across years, not the mean. With ~5 observations per
+    calendar week, one viral year drags the mean up permanently and the average
+    year inherits a peak that only ever happened once: the Dobbs spike alone
+    moves vasectomy's week-26 mean from 5 to 7.8 and invents a June season. The
+    median ignores it, which is the whole point — a one-off is not a season.
+    """
     by_week = defaultdict(list)
     for d, v in zip(dates, values):
         wk = min(d.isocalendar()[1], 52)   # fold week 53 into 52
         by_week[wk].append(v)
-    curve = [statistics.mean(by_week[w]) if w in by_week else 0.0
+    curve = [statistics.median(by_week[w]) if w in by_week else 0.0
              for w in range(1, 53)]
     return [statistics.mean([curve[(i - 1) % 52], curve[i], curve[(i + 1) % 52]])
             for i in range(52)]
 
 
 def ramp_and_peak(curve):
-    """Peak week, ramp-start week (circular), and lead weeks between them."""
+    """Peak week, ramp-start week (circular), and lead weeks between them.
+
+    Returns `defined: False` when the curve is too flat to time anything against.
+    On a flat series the argmax is just the noisiest week, and its neighbour sits
+    below the halfway threshold, so the ramp collapses onto the peak and the
+    function emits a confident-looking "publish by" date built from rounding
+    error. Refusing to date it is the honest output: a category with no season
+    has no ramp to lead.
+    """
     peak_i = max(range(52), key=lambda i: curve[i])
+    med = statistics.median(curve)
+    amplitude = (curve[peak_i] - med) / med if med else 0.0
+    if amplitude < MIN_RAMP_AMPLITUDE:
+        return {"defined": False, "peak_week": peak_i + 1,
+                "amplitude": round(amplitude, 3)}
+
     baseline = statistics.quantiles(curve, n=4)[0]   # 25th percentile
     threshold = baseline + RAMP_FRACTION * (curve[peak_i] - baseline)
 
@@ -141,7 +167,8 @@ def ramp_and_peak(curve):
             ramp_i = (i + 1) % 52
             break
     lead = (peak_i - ramp_i) % 52
-    return peak_i + 1, ramp_i + 1, lead
+    return {"defined": True, "peak_week": peak_i + 1, "ramp_start_week": ramp_i + 1,
+            "ramp_lead_weeks": lead, "amplitude": round(amplitude, 3)}
 
 
 def find_anomalies(dates, values):
@@ -155,9 +182,16 @@ def find_anomalies(dates, values):
     made the old test unconditionally dead. The median and MAD are unmoved by
     the outlier, so the spike stays visible.
 
-    A flag requires all three of: modified z-score, an absolute gap in index
-    points, and a ratio to the week's median. MAD is frequently 0 or 1 on smooth
-    series, which inflates the z-score, so the latter two carry the weight there.
+    A flag requires all three of: modified z-score, a minimum gap in index points,
+    and a ratio to the week's median. MAD is frequently 0 or 1 on smooth series,
+    which inflates the z-score, so the latter two carry the weight there.
+
+    The gap floor scales with the series' own mean. A fixed floor in index points
+    is only meaningful for a term that uses most of the 0-100 range: on a term
+    that a larger comparison term has squashed into single digits, a 15-point
+    floor demands a 4x spike and quietly disables detection. Google Trends scales
+    every term in an export against the largest one, so squashed series are the
+    normal case, not the exception — the floor has to be relative to survive it.
 
     Values are compared within their own year. On a series with a strong secular
     trend the early years otherwise read as anomalies against a median drawn from
@@ -175,6 +209,7 @@ def find_anomalies(dates, values):
         detrended = v / year_mean[d.year] * overall if year_mean[d.year] else v
         by_week[min(d.isocalendar()[1], 52)].append((d, v, detrended))
 
+    floor = max(ANOMALY_MIN_POINTS, ANOMALY_FLOOR_FRAC * overall)
     anomalies = []
     for wk, obs in by_week.items():
         if len(obs) < 3:
@@ -184,7 +219,7 @@ def find_anomalies(dates, values):
         mad = statistics.median([abs(t - med) for t in vals])
         for d, v, t in obs:
             gap = t - med
-            if gap < ANOMALY_ABS_FLOOR or t < ANOMALY_RATIO * med:
+            if gap < floor or t < ANOMALY_RATIO * med:
                 continue
             # 0.6745 rescales MAD to a standard-deviation equivalent
             z = 0.6745 * gap / mad if mad > 0 else float("inf")
@@ -212,16 +247,39 @@ def analyze(path):
         index, per_year = monthly_index(dates, values)
         months = classify_months(index, per_year)
         curve = weekly_curve(dates, values)
-        peak_wk, ramp_wk, lead = ramp_and_peak(curve)
-        report["terms"][term] = {
+        timing = ramp_and_peak(curve)
+        entry = {
             "months": {MONTH_NAMES[m - 1]: months[m] for m in sorted(months)},
-            "peak_week": peak_wk, "peak_week_approx": week_to_approx_date(peak_wk),
-            "ramp_start_week": ramp_wk,
-            "ramp_start_approx": week_to_approx_date(ramp_wk),
-            "ramp_lead_weeks": lead,
+            "timing_defined": timing["defined"],
+            "amplitude": timing["amplitude"],
+            "peak_week": timing["peak_week"],
+            "peak_week_approx": week_to_approx_date(timing["peak_week"]),
+            "resolution": series_resolution(values),
             "anomalies": find_anomalies(dates, values),
         }
+        if timing["defined"]:
+            entry.update({
+                "ramp_start_week": timing["ramp_start_week"],
+                "ramp_start_approx": week_to_approx_date(timing["ramp_start_week"]),
+                "ramp_lead_weeks": timing["ramp_lead_weeks"],
+            })
+        report["terms"][term] = entry
     return report
+
+
+def series_resolution(values):
+    """How coarse this term is on its export's shared 0-100 scale.
+
+    Trends scales every term in an export against the largest one, so a small
+    term can be squeezed into single digits where one integer step is a large
+    share of its own mean. Past ~8% per step the seasonal index is mostly
+    rounding error and the term needs its own export to be worth reading.
+    """
+    m = statistics.mean(values)
+    step_pct = 100 / m if m else float("inf")
+    return {"mean": round(m, 1), "distinct_values": len(set(values)),
+            "step_pct_of_mean": round(step_pct, 1),
+            "usable": step_pct <= 8.0}
 
 
 def print_report(report):
@@ -240,12 +298,30 @@ def print_report(report):
             bar = "#" * int(info["index"] / 10)
             print(f"{m:<6}{info['index']:>7}  {info['label']:<14}"
                   f"{info['consistency']:>14.0%}  {bar}")
-        print(f"\nPeak week:       {t['peak_week']} ({t['peak_week_approx']})")
-        print(f"Ramp starts:     week {t['ramp_start_week']} "
-              f"({t['ramp_start_approx']}) — {t['ramp_lead_weeks']} weeks "
-              "before peak")
-        print("Publish-by date: 8–12 weeks BEFORE ramp start for SEO content; "
-              "paid spend 2–4 weeks before peak.")
+        res = t["resolution"]
+        if not res["usable"]:
+            print(f"\n!! LOW RESOLUTION: mean {res['mean']} on the 0-100 scale, only "
+                  f"{res['distinct_values']} distinct values —")
+            print(f"   one integer step is {res['step_pct_of_mean']}% of this term's "
+                  "mean, so the index above is")
+            print("   mostly rounding error. Re-export this term on its own, or "
+                  "against similar-sized terms.")
+
+        if t["timing_defined"]:
+            print(f"\nPeak week:       {t['peak_week']} ({t['peak_week_approx']})")
+            print(f"Ramp starts:     week {t['ramp_start_week']} "
+                  f"({t['ramp_start_approx']}) — {t['ramp_lead_weeks']} weeks "
+                  "before peak")
+            print("Publish-by date: 8–12 weeks BEFORE ramp start for SEO content; "
+                  "paid spend 2–4 weeks before peak.")
+        else:
+            print(f"\nNo usable ramp:  the average year peaks only "
+                  f"{t['amplitude'] * 100:.0f}% above its own median "
+                  f"(needs {MIN_RAMP_AMPLITUDE * 100:.0f}%).")
+            print("                 This category has no season to lead. Publish "
+                  "evergreen on a steady")
+            print("                 cadence and spend level across the year; there "
+                  "is no peak to time.")
         if t["anomalies"]:
             print("\nOne-off spikes (NOT seasonality — exclude from planning):")
             for a in t["anomalies"]:

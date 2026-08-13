@@ -420,7 +420,10 @@
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const REAL_PEAK_INDEX = 115, MILD_BUMP_INDEX = 107, OFF_SEASON_INDEX = 88,
       CONSISTENCY_REQUIRED = 0.6, RAMP_FRACTION = 0.5,
-      ANOMALY_Z = 3.5, ANOMALY_ABS_FLOOR = 15, ANOMALY_RATIO = 1.5;
+      ANOMALY_Z = 3.5, ANOMALY_FLOOR_FRAC = 0.30, ANOMALY_MIN_POINTS = 3,
+      ANOMALY_RATIO = 1.5,
+      MIN_RAMP_AMPLITUDE = 0.10,   // flatter than this and there is no ramp to date
+      MIN_RESOLUTION_STEP_PCT = 8; // one integer step above this = rounding error
 
 const mean = a => a.reduce((s, v) => s + v, 0) / a.length;
 const median = a => { const s = [...a].sort((x, y) => x - y), m = s.length >> 1;
@@ -477,18 +480,28 @@ function classifyMonths({ index, perYear }) {
   return out;
 }
 
+/* Median across years, not mean: one viral year would otherwise hand the average
+   year a peak that only happened once (see the Dobbs spike in vasectomy). */
 function weeklyCurve(dates, values) {
   const byWeek = {};
   dates.forEach((d, i) => (byWeek[isoWeek(d)] ??= []).push(values[i]));
   const raw = [];
-  for (let w = 1; w <= 52; w++) raw.push(byWeek[w] ? mean(byWeek[w]) : 0);
+  for (let w = 1; w <= 52; w++) raw.push(byWeek[w] ? median(byWeek[w]) : 0);
   return raw.map((_, i) =>
     mean([raw[(i + 51) % 52], raw[i], raw[(i + 1) % 52]]));
 }
 
+/* Returns defined:false when the curve is too flat to time against. On a flat
+   series the argmax is just the noisiest week, and dating a ramp off it produces
+   a confident "publish by" built from rounding error. */
 function rampAndPeak(curve) {
   let peakI = 0;
   curve.forEach((v, i) => { if (v > curve[peakI]) peakI = i; });
+  const med = median(curve);
+  const amplitude = med ? (curve[peakI] - med) / med : 0;
+  if (amplitude < MIN_RAMP_AMPLITUDE)
+    return { defined: false, peakWeek: peakI + 1, amplitude };
+
   const sorted = [...curve].sort((a, b) => a - b);
   const baseline = sorted[Math.floor(52 * .25)];
   const thr = baseline + RAMP_FRACTION * (curve[peakI] - baseline);
@@ -497,8 +510,19 @@ function rampAndPeak(curve) {
     const i = (peakI - s + 52) % 52;
     if (curve[i] < thr) { rampI = (i + 1) % 52; break; }
   }
-  return { peakWeek: peakI + 1, rampWeek: rampI + 1,
-           leadWeeks: (peakI - rampI + 52) % 52 };
+  return { defined: true, peakWeek: peakI + 1, rampWeek: rampI + 1,
+           leadWeeks: (peakI - rampI + 52) % 52, amplitude };
+}
+
+/* How coarse a term is on its export's shared 0-100 scale. Trends scales every
+   term against the largest one, so a small term can land in single digits where
+   one integer step swamps its own seasonality. */
+function seriesResolution(values) {
+  const m = mean(values);
+  const stepPct = m ? 100 / m : Infinity;
+  return { mean: Math.round(m * 10) / 10, distinct: new Set(values).size,
+           stepPct: Math.round(stepPct * 10) / 10,
+           usable: stepPct <= MIN_RESOLUTION_STEP_PCT };
 }
 
 /* Median+MAD anomaly test (same rationale as the Python version: with one
@@ -517,6 +541,9 @@ function findAnomalies(dates, values, keyFn) {
     (groups[keyFn(d)] ??= []).push({ d, v: values[i], det });
   });
 
+  // Floor scales with the series' own mean: a fixed 15-point floor demands a 4x
+  // spike from a term Trends has squashed into single digits, and so never fires.
+  const floor = Math.max(ANOMALY_MIN_POINTS, ANOMALY_FLOOR_FRAC * overall);
   const out = [];
   for (const k in groups) {
     const obs = groups[k];
@@ -525,7 +552,7 @@ function findAnomalies(dates, values, keyFn) {
     const mad = median(obs.map(o => Math.abs(o.det - med)));
     for (const { d, v, det } of obs) {
       const gap = det - med;
-      if (gap < ANOMALY_ABS_FLOOR || det < ANOMALY_RATIO * med) continue;
+      if (gap < floor || det < ANOMALY_RATIO * med) continue;
       if (mad > 0 && 0.6745 * gap / mad < ANOMALY_Z) continue;
       out.push({ date: d, value: v, typical: Math.round(med * 10) / 10 });
     }
@@ -549,28 +576,46 @@ function analyzeTerm(term) {
     const dates = parseDates(term.monthly.dates), vals = term.monthly.values;
     a.monthly = { dates, vals, source: term.monthly.source,
       months: classifyMonths(monthlyIndex(dates, vals)),
+      resolution: seriesResolution(vals),
       anomalies: findAnomalies(dates, vals, d => d.getUTCMonth() + 1) };
   }
   if (term.weekly) {
     const dates = parseDates(term.weekly.dates), vals = term.weekly.values;
     const curve = weeklyCurve(dates, vals);
     a.weekly = { dates, vals, curve, source: term.weekly.source,
+      resolution: seriesResolution(vals),
       ...rampAndPeak(curve),
       anomalies: findAnomalies(dates, vals, isoWeek) };
   }
-  // Fall back to monthly-derived timing when no weekly file exists.
-  const src = a.weekly ?? null;
-  if (src) {
-    a.timing = { precision: "week", peakWeek: src.peakWeek, rampWeek: src.rampWeek,
-      leadWeeks: src.leadWeeks, publishWeek: wrapW(src.rampWeek - 8),
-      paidWeek: wrapW(src.peakWeek - 3) };
-  } else if (a.monthly) {
+  a.resolution = a.weekly?.resolution ?? a.monthly?.resolution ?? null;
+
+  // a.timing is null when the data gives no season worth timing against. Every
+  // consumer must handle that — inventing a date here is the failure mode this
+  // whole tool exists to prevent.
+  a.timing = null;
+  if (a.weekly?.defined) {
+    const w = a.weekly;
+    a.timing = { precision: "week", peakWeek: w.peakWeek, rampWeek: w.rampWeek,
+      leadWeeks: w.leadWeeks, publishWeek: wrapW(w.rampWeek - 8),
+      paidWeek: wrapW(w.peakWeek - 3), amplitude: w.amplitude };
+  } else if (!a.weekly && a.monthly) {
+    // No weekly file: fall back to month precision, but only if some month
+    // actually clears the bump threshold.
     const idx = a.monthly.months;
     let peakM = 1;
     for (let m = 2; m <= 12; m++)
       if ((idx[m]?.index ?? 0) > (idx[peakM]?.index ?? 0)) peakM = m;
-    a.timing = { precision: "month", peakMonth: peakM,
-      rampMonth: (peakM + 10) % 12 + 1 };   // month before peak
+    if ((idx[peakM]?.index ?? 0) >= MILD_BUMP_INDEX)
+      a.timing = { precision: "month", peakMonth: peakM,
+        rampMonth: (peakM + 10) % 12 + 1 };
+  }
+  if (!a.timing) {
+    let peakM = 1;
+    const idx = a.monthly?.months || {};
+    for (let m = 2; m <= 12; m++)
+      if ((idx[m]?.index ?? 0) > (idx[peakM]?.index ?? 0)) peakM = m;
+    a.noSeason = { highMonth: peakM,
+      amplitude: a.weekly?.amplitude ?? null };
   }
   return a;
 }
@@ -611,14 +656,19 @@ function getAnalysis(catId, termName) {
 }
 
 function defaultTerm(cat) {
-  // Most seasonal term (highest monthly index spread) makes the best default view.
-  let best = cat.terms[0].name, bestSpread = -1;
+  // Most seasonal term makes the best default view — but resolution comes first.
+  // A term Trends squashed into single digits shows a huge index spread made of
+  // rounding steps, and would otherwise win this contest on pure noise.
+  let best = cat.terms[0].name, bestKey = [-1, -1];
   for (const t of cat.terms) {
     const a = getAnalysis(cat.id, t.name);
     if (!a.monthly) continue;
     const idxs = Object.values(a.monthly.months).map(m => m.index);
     const spread = Math.max(...idxs) - Math.min(...idxs);
-    if (spread > bestSpread) { bestSpread = spread; best = t.name; }
+    const key = [a.resolution?.usable ? 1 : 0, spread];
+    if (key[0] > bestKey[0] || (key[0] === bestKey[0] && key[1] > bestKey[1])) {
+      bestKey = key; best = t.name;
+    }
   }
   return best;
 }
@@ -733,6 +783,12 @@ function renderWeeklyChart(a) {
     return;
   }
   const { curve } = a.weekly, t = a.timing;
+  if (!t) box.insertAdjacentHTML("beforeend",
+    `<p class="sub" style="margin:0 0 8px"><b>No season detected.</b> The average
+     year peaks only ${Math.round((a.weekly.amplitude || 0) * 100)}% above its own
+     median — under the ${MIN_RAMP_AMPLITUDE * 100}% needed to call a ramp. The curve
+     is drawn without publish/ramp/peak markers because dating them here would be
+     reading noise.</p>`);
   const w = Math.max(box.clientWidth || 900, 560), h = 260,
         ml = 40, mr = 14, mt = 30, mb = 26;
   const svg = el("svg", { viewBox: `0 0 ${w} ${h}`, role: "img",
@@ -748,27 +804,29 @@ function renderWeeklyChart(a) {
       svg).textContent = mn;
   });
 
-  // ramp→peak wash
-  const ri = t.rampWeek - 1, pi = t.peakWeek - 1;
-  const washSpan = (from, to) => {
-    el("rect", { x: xs(from), y: mt, width: Math.max(xs(to) - xs(from), 0),
-      height: h - mt - mb, fill: "var(--s1-wash)" }, svg);
-  };
-  if (ri <= pi) washSpan(ri, pi);
-  else { washSpan(ri, 51); washSpan(0, pi); }
+  if (t) {
+    // ramp→peak wash
+    const ri = t.rampWeek - 1, pi = t.peakWeek - 1;
+    const washSpan = (from, to) => {
+      el("rect", { x: xs(from), y: mt, width: Math.max(xs(to) - xs(from), 0),
+        height: h - mt - mb, fill: "var(--s1-wash)" }, svg);
+    };
+    if (ri <= pi) washSpan(ri, pi);
+    else { washSpan(ri, 51); washSpan(0, pi); }
 
-  // markers: publish-by, ramp, peak
-  const marker = (week, label, anchor) => {
-    const x = xs(week - 1);
-    el("line", { x1: x, x2: x, y1: mt - 4, y2: h - mb, stroke: "var(--baseline)",
-      "stroke-width": 1 }, svg);
-    el("text", { x: x + (anchor === "end" ? -5 : 5), y: mt - 10, fill: "var(--ink-2)",
-      "font-size": 11, "font-weight": 600,
-      "text-anchor": anchor === "end" ? "end" : "start" }, svg).textContent = label;
-  };
-  marker(t.publishWeek, `Publish by ${fmtWeek(t.publishWeek)}`,
-    t.publishWeek > 40 ? "end" : "start");
-  marker(t.rampWeek, `Ramp ${fmtWeek(t.rampWeek)}`, t.rampWeek > 44 ? "end" : "start");
+    // markers: publish-by, ramp, peak
+    const marker = (week, label, anchor) => {
+      const x = xs(week - 1);
+      el("line", { x1: x, x2: x, y1: mt - 4, y2: h - mb, stroke: "var(--baseline)",
+        "stroke-width": 1 }, svg);
+      el("text", { x: x + (anchor === "end" ? -5 : 5), y: mt - 10, fill: "var(--ink-2)",
+        "font-size": 11, "font-weight": 600,
+        "text-anchor": anchor === "end" ? "end" : "start" }, svg).textContent = label;
+    };
+    marker(t.publishWeek, `Publish by ${fmtWeek(t.publishWeek)}`,
+      t.publishWeek > 40 ? "end" : "start");
+    marker(t.rampWeek, `Ramp ${fmtWeek(t.rampWeek)}`, t.rampWeek > 44 ? "end" : "start");
+  }
 
   // area + line
   let dArea = `M ${xs(0)} ${ys(0)}`, dLine = "";
@@ -779,13 +837,15 @@ function renderWeeklyChart(a) {
   el("path", { d: dLine, fill: "none", stroke: "var(--s1)", "stroke-width": 2,
     "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
 
-  // peak dot + label (the one direct label)
-  const px = xs(pi), py = ys(curve[pi]);
-  el("circle", { cx: px, cy: py, r: 6, fill: "var(--s1)", stroke: "var(--surface)",
-    "stroke-width": 2 }, svg);
-  el("text", { x: px, y: py - 12, "text-anchor": "middle", fill: "var(--ink)",
-    "font-size": 11.5, "font-weight": 600 }, svg)
-    .textContent = `Peak ${fmtWeek(t.peakWeek)}`;
+  // peak dot + label (the one direct label) — only when there is a real peak
+  if (t) {
+    const px = xs(t.peakWeek - 1), py = ys(curve[t.peakWeek - 1]);
+    el("circle", { cx: px, cy: py, r: 6, fill: "var(--s1)", stroke: "var(--surface)",
+      "stroke-width": 2 }, svg);
+    el("text", { x: px, y: py - 12, "text-anchor": "middle", fill: "var(--ink)",
+      "font-size": 11.5, "font-weight": 600 }, svg)
+      .textContent = `Peak ${fmtWeek(t.peakWeek)}`;
+  }
 
   // crosshair + tooltip
   const cross = el("line", { y1: mt, y2: h - mb, stroke: "var(--baseline)",
@@ -1093,14 +1153,19 @@ function renderOverviewChart(rows) {
       if ((months[m]?.index ?? 0) > (months[peakM]?.index ?? 0)) peakM = m;
     const info = months[peakM];
     const key = rampColor(info?.index ?? 100);
-    const peakTxt = t?.precision === "week" ? fmtWeek(t.peakWeek) : MONTHS[peakM - 1];
+    const peakTxt = !t ? '<span style="color:var(--muted)">no season</span>'
+      : t.precision === "week" ? fmtWeek(t.peakWeek) : MONTHS[peakM - 1];
     const rampTxt = t ? (t.precision === "week" ? fmtWeek(t.rampWeek)
                                                 : MONTHS[t.rampMonth - 1]) : "—";
     const pubTxt = t ? (t.precision === "week" ? fmtWeek(t.publishWeek)
-                                               : MONTHS[(t.rampMonth + 9) % 12]) : "—";
+                                               : MONTHS[(t.rampMonth + 9) % 12])
+                     : "any time";
+    const lowRes = row.a.resolution && !row.a.resolution.usable
+      ? ' <span title="Too coarse on this export\'s shared scale to read reliably" '
+        + 'style="color:var(--warning);font-weight:700">!</span>' : "";
     return `<tr>
       <td><span class="dotkey" style="background:${key}"></span><b>${row.cat.label}</b></td>
-      <td style="color:var(--ink-2)">“${row.term}”</td>
+      <td style="color:var(--ink-2)">“${row.term}”${lowRes}</td>
       <td class="num">${peakTxt}</td>
       <td class="num">${rampTxt}</td>
       <td class="num">${pubTxt}</td>
@@ -1316,12 +1381,28 @@ function renderBudget() {
   for (let m = 2; m <= 12; m++)
     if ((months[m]?.index ?? 0) > (months[peakM]?.index ?? 0)) peakM = m;
   const t = a.timing;
-  document.getElementById("role-note").innerHTML =
-    `As a <b>${role.label.toLowerCase()}</b>, your demand is <b>${cat.label.toLowerCase()}</b>, ` +
-    `read through “${term}”. Search interest peaks in <b>${MONTHS[peakM - 1]}</b>` +
-    (t?.precision === "week" ? ` (${fmtWeek(t.peakWeek)})` : "") +
-    `, so the plan below front-loads spend into the months <i>before</i> that — ` +
-    `content earliest, paid latest.`;
+  const res = a.resolution;
+  let note = `As a <b>${role.label.toLowerCase()}</b>, your demand is ` +
+    `<b>${cat.label.toLowerCase()}</b>, read through “${term}”. `;
+  if (t) {
+    note += `Search interest peaks in <b>${MONTHS[peakM - 1]}</b>` +
+      (t.precision === "week" ? ` (${fmtWeek(t.peakWeek)})` : "") +
+      `, so the plan below front-loads spend into the months <i>before</i> that — ` +
+      `content earliest, paid latest.`;
+  } else {
+    note += `<b>This category has no season.</b> The average year never rises far ` +
+      `enough above its own median to call a peak, so there is nothing to lead and ` +
+      `nothing to time. The plan below is close to even by design — a flat budget is ` +
+      `the correct answer to flat demand, and any month-to-month variation you see is ` +
+      `the model tracking noise, not opportunity. Spend the year on evergreen content ` +
+      `and efficiency, not launches.`;
+  }
+  if (res && !res.usable)
+    note += `<br><b style="color:var(--warning)">⚠ Low resolution:</b> “${term}” averages ` +
+      `${res.mean} on this export's shared 0–100 scale with only ${res.distinct} distinct ` +
+      `values, so one integer step is ${res.stepPct}% of its mean. Re-export it on its own ` +
+      `before trusting any of these numbers.`;
+  document.getElementById("role-note").innerHTML = note;
 
   const bestI = alloc.dollars.indexOf(Math.max(...alloc.dollars));
   const worstI = alloc.dollars.indexOf(Math.min(...alloc.dollars));
@@ -1376,9 +1457,19 @@ function renderBudget() {
 function renderTiles(a) {
   const box = document.getElementById("tiles");
   const t = a.timing;
-  if (!t) { box.innerHTML = ""; return; }
   const tile = (lbl, val, note) => `<div class="tile"><div class="lbl">${lbl}</div>
     <div class="val">${val}</div><div class="note">${note}</div></div>`;
+  if (!t) {
+    const amp = a.noSeason?.amplitude;
+    box.innerHTML =
+      tile("Peak demand", "None", "no month is reliably hotter than the rest") +
+      tile("Ramp starts", "—", "nothing to ramp into") +
+      tile("SEO publish-by", "Any time", "evergreen cadence beats timed launches") +
+      tile("Paid launch", "Level", amp != null
+        ? `average year varies only ${Math.round(amp * 100)}% peak-to-median`
+        : "spread spend evenly across the year");
+    return;
+  }
   if (t.precision === "week") {
     box.innerHTML =
       tile("Peak demand", fmtWeek(t.peakWeek), `week ${t.peakWeek} — plan backwards from here`) +
@@ -1474,7 +1565,16 @@ function renderCategoryView() {
   if (a.monthly) prov.push(`Monthly: ${a.monthly.source} (${a.monthly.dates.length} pts, ` +
     `${a.monthly.dates[0].getUTCFullYear()}–${a.monthly.dates.at(-1).getUTCFullYear()})`);
   if (a.weekly) prov.push(`Weekly: ${a.weekly.source} (${a.weekly.dates.length} pts)`);
-  document.getElementById("provenance").textContent = prov.join("  ·  ");
+  const pv = document.getElementById("provenance");
+  pv.textContent = prov.join("  ·  ");
+  const res = a.resolution;
+  if (res && !res.usable)
+    pv.insertAdjacentHTML("beforeend",
+      `<br><b style="color:var(--warning)">⚠ Low resolution:</b> “${a.name}” averages
+       ${res.mean} on this export's shared 0–100 scale with only ${res.distinct} distinct
+       values — one integer step is ${res.stepPct}% of its mean, so the seasonal index
+       below is largely rounding error. Re-export this term on its own, or against
+       similar-sized terms, before drawing conclusions.`);
 
   renderSampleBanner(cat, a);
   renderTiles(a);
