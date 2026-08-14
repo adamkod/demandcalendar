@@ -1,111 +1,112 @@
 # Demand Calendar
 
-**MGMT 440 — AI project.** Turns search-interest seasonality for a category into an
-editorial and campaign calendar: **what to publish when, how far ahead of the peak to
-start, and which of your assumed peaks don't actually exist.**
+Turns search-interest seasonality into an editorial and campaign calendar: **what to
+publish, when to start, and which of the peaks everyone plans around don't survive
+contact with the data.**
 
-## Start here (teammates)
+**[→ Live demo](https://ADAM-USERNAME.github.io/demand-calendar/)** · no install, works
+offline, all data included
 
-**Just want to look at it?** Open `site/index.html` in any browser. Nothing to install —
-no Node, no Python, no server. Or open `site/demand-calendar-standalone.html`, which is the
-same app in a single file you can email to anyone.
+---
 
-**Want to change something?** Run Claude Code from inside this folder:
+## What it found
+
+Four categories that whole industries are built around — births, marriages, divorces,
+vasectomies — tested against up to ten years of Google Trends data.
+
+| The belief | The data |
+|---|---|
+| September baby boom | **Busted.** No month is reliably elevated |
+| January is "Divorce Month" | **Busted.** January is the *weakest* month for `divorce lawyer` |
+| June wedding season | **Mistimed.** June is +9% in half the years; July is +12% in *every* year |
+| March Madness vasectomy rush | **Busted.** March reads +3%, no consistent pattern |
+
+Three of four were false. The one real peak sits seven months from where the industry
+spends: **`wedding venues` peaks in the week between Christmas and New Year's, +40% in
+every year measured** — while the first week of December is that same term's annual
+floor at −26%. Search goes from the bottom of its year to the top in three weeks, and
+`engagement rings` peaks the week before, which is the mechanism: people get engaged over
+the holidays and start shopping venues within days.
+
+A tool that reported the busiest *month* would have missed all of that, because December
+averages out to "off-season."
+
+## What it does
+
+- **Seasonality heatmap** — twelve months, four categories, each indexed to its own
+  yearly average so rows can be read side by side
+- **Month drill-down** — click any month for its weeks and days, with holidays marked and
+  that month's budget split across its weeks
+- **Holiday lift** — does Valentine's Day actually move wedding demand? (No.) Tests the
+  four weeks around each holiday and reports the ones that hold up
+- **Budget planner** — pick a job and a budget, get a month-by-month plan that spends
+  *ahead* of demand, with a written rationale per month and CSV export
+- **Editorial pipeline** — related queries sorted into what to write, reinforce, refresh
+  and retire
+- **Import** — any spreadsheet with dates in the first column; Trends is just what this
+  was fed
+
+## What was interesting to build
+
+**Two implementations, kept in lockstep.** A Python CLI (`analysis/`) and a browser build
+(`site/`) run the same analysis. They must agree; the rule is written into
+[CLAUDE.md](CLAUDE.md) and verified term by term after every change.
+
+**Refusing to answer is a feature.** The tool declines to date a campaign when the data
+can't support one — flat curves, series too coarse to read, peaks that don't recur. Most
+of the engineering went into the checks that produce those refusals.
+
+**Five bugs the real data exposed**, each caught because a result looked wrong rather than
+because a test failed:
+
+- The anomaly floor was absolute, so on a term Google had squashed into single digits it
+  silently required a 4× spike — the largest event in the dataset went unflagged
+- The seasonal index pooled raw values, letting a secular trend masquerade as seasonality
+  whenever the export didn't start in January
+- The average-year curve used the mean, so one viral year became a permanent season
+- Averaging the index across years let a single extreme year set the headline — and the
+  budget allocator reads numbers, not labels, so it would have moved real money because
+  of one court ruling
+- The allocator worked off month averages, which hid the single best week of the year and
+  put the budget in the wrong quarter
+
+**No build step.** React, Tailwind and htm are vendored, so the app opens from a
+`file://` URL and exports to one self-contained HTML file. A bundler would have broken
+both.
+
+## Stack
+
+Python 3 (standard library only) · React 18 · Tailwind CSS · htm · Lucide · no Node
+toolchain, no dependencies to install
+
+## Running it
+
+Open `site/index.html` — that's it. Nothing to install.
+
+Python is needed only to re-run the analysis or rebuild after changing the data:
 
 ```
-claude
+py analysis/seasonality.py data/<file>.csv     # seasonality + peak reality test
+py analysis/holidays.py data/<weekly>.csv      # holiday lift by week offset
+py analysis/build_site_data.py                 # data/*.csv -> site/data.js
+py analysis/build_standalone.py                # one shareable HTML file
 ```
 
-It reads [CLAUDE.md](CLAUDE.md) automatically, so it already knows the project's rules —
-including the two that matter most: the Python and JavaScript analysis must stay in
-lockstep, and nothing may claim a peak the data doesn't support.
+After a rebuild, hard-refresh with **Ctrl+Shift+R** — browsers cache `data.js`.
 
-Work on a branch, not `main`:
-
-```
-git checkout -b your-name/what-youre-changing
-```
-
-Then push and open a pull request. Adam merges.
-
-**After changing anything in `site/` or `data/`, rebuild:**
-
-```
-py analysis/build_site_data.py && py analysis/build_standalone.py
-```
-
-Then hard-refresh the page with **Ctrl+Shift+R** — browsers cache `data.js`, and a plain
-refresh will keep showing the previous build. Python 3 is only needed for these rebuild
-steps and the CLI analysers; viewing and editing the app itself needs neither.
-
-## The problem
+## Method
 
 Marketing teams plan content around peaks they *believe* exist ("everyone searches for
 grills in June"). Some of those peaks are real, some are mild bumps, and some are
 folklore. Even when a peak is real, teams usually start publishing too late — SEO
 content needs 8–12 weeks to rank, so publishing *at* the peak means missing it.
 
-## The data
+
+### The data
 
 [Google Trends](https://trends.google.com/trends/explore) — free, weekly search-interest
 index (0–100) for any term, downloadable as CSV. See
 [data/HOW-TO-DOWNLOAD.md](data/HOW-TO-DOWNLOAD.md).
-
-## How it works
-
-1. Pick a category and 2–5 search terms that represent it.
-2. Download 5 years of weekly data from Google Trends into `data/` (one CSV per term,
-   or one multi-term CSV).
-3. Run the analyzer:
-
-   ```
-   python analysis/seasonality.py data/your-file.csv
-   ```
-
-4. The script computes a monthly seasonal index across the 5 years, classifies each
-   month (REAL PEAK / MILD BUMP / NO PEAK), measures how consistent the peak is
-   year-over-year, and finds the **ramp start** — the week interest begins climbing —
-   which sets the publish-by date.
-5. The AI agent (see `CLAUDE.md`) interprets the output and drafts the actual
-   editorial + campaign calendar with dates, content types, and lead times.
-
-## The dashboard
-
-Open `site/index.html` in any browser — no server, no install, no build step. Four
-categories are built in: **births, divorces, marriages, vasectomies**.
-
-Built with **React 18 and Tailwind CSS**, both vendored into `site/vendor/` rather than
-installed. There is no Node toolchain here: the app has to keep opening by double-click and
-exporting to a single shareable file, which a bundler would break. `htm` supplies JSX-like
-syntax without a compile step, so `app.js` reads as ordinary React components. Icons are
-Lucide glyphs inlined as SVG paths.
-
-`app.js` renders and nothing else. Every number comes from `analysis.js`, which mirrors
-`analysis/seasonality.py` — **change a threshold in one and you must change it in the other**,
-or the CLI and the app will disagree about the same data.
-
-Three surfaces do the work:
-
-**Calendar.** Filter pills for Birth, Marriage, Divorce and Vasectomies drive a
-January-to-December seasonality heatmap — one row per category, each on its own pastel
-gradient, indexed to its own yearly average so rows can be read side by side. Below it,
-callout cards generated *from the analysis rather than written by hand*, which is why some
-of them report that a peak isn't there. Then the assumption scoreboard
-(CONFIRMED / MISTIMED / OVERRATED / BUSTED) and a detail card per category with a sparkline,
-key dates, the monthly index, and a low-resolution warning where one applies.
-
-Colour never carries meaning alone: every category pairs its hue with a Lucide icon and a
-text label, so the palette stays readable in greyscale and for colour-blind viewers.
-
-**Click any month** to drill into it: a day calendar for the planning year with holidays
-ringed, the ISO weeks inside that month with each one's index, and that month's budget split
-across those weeks. Plus a holiday-lift verdict for every holiday falling in the month.
-
-**Holiday sensitivity** gets its own table. For each holiday it finds the strongest week in
-the surrounding month — offsets from four weeks before to one week after — takes the median
-across years so one unusual year can't invent an effect, and reports how often it repeats. A
-holiday only "lands" at the same bar the monthly classifier uses. Claimed tie-ins are listed
-**even when they fail**, because those are the ones plans get built on.
 
 ### What the week layer can and cannot do
 
@@ -113,29 +114,11 @@ holiday only "lands" at the same bar the monthly classifier uses. Claimed tie-in
   nine months. Day cells inherit their ISO week's index and the UI says so; nothing here
   claims day-level precision.
 - **Weekly data only exists where you exported it.** Holiday lift needs a *Past 5 years*
-  weekly export of a category's headline term. Where that's missing — or where the weekly
-  series is too coarse to read — the app says so rather than guessing.
+  weekly export of a term. Where that's missing — or where the series is too coarse to
+  read — the app says so rather than guessing.
 
-**Budget planner.** Pick your job (wedding planner, family law attorney, urology clinic,
-baby brand, …) and enter a budget. It returns a month-by-month spend plan with dollar
-amounts, quarter totals, a phase-colored column chart, and a written rationale per month
-tied to the index that drove it. Two sliders control the content/paid split and how hard
-to concentrate budget into peaks. Exports to CSV.
-
-Data flows in two ways: files in `data/` compiled by `analysis/build_site_data.py` into
-`site/data.js`, or the **Import Trends CSV** button, which parses an export in the browser
-and stores it locally. Until real files land, every synthetic series is labeled SAMPLE and
-a warning banner stays up.
-
-### Sharing it
-
-`site/demand-calendar-standalone.html` is the same dashboard with the data inlined into a
-single file — no siblings required. Email it, drop it in Drive, or open it from a USB stick.
-Rebuild it after any change to the site or the data:
-
-```
-py analysis/build_standalone.py
-```
+Colour never carries meaning alone: every category pairs its hue with a Lucide icon and a
+text label, so the palette stays readable in greyscale and for colour-blind viewers.
 
 ## Project structure
 
@@ -163,7 +146,7 @@ demand-calendar/
 └── output/                    ← generated calendars land here
 ```
 
-## Budget model
+### Budget model
 
 Each month gets a weight of (seasonal index ÷ 100) raised to the concentration exponent, so
 peaks pull budget super-proportionally. That weight is then shifted to buy *ahead* of demand:
@@ -172,7 +155,7 @@ three months later. The two envelopes are normalized separately, blended by your
 split, and rounded to whole dollars summing exactly to the budget. It allocates a fixed budget
 across the year — it does not forecast revenue or ROI.
 
-## Key concepts
+### Key concepts
 
 - **Seasonal index**: average interest for a month ÷ overall average, ×100. An index
   of 140 means that month runs 40% above the yearly norm.
@@ -182,3 +165,31 @@ across the year — it does not forecast revenue or ROI.
 - **Ramp start**: the week interest first crosses halfway between baseline and peak.
   Publish SEO content 8–12 weeks *before* ramp start; launch paid campaigns 2–4 weeks
   before the peak itself.
+
+## Contributing
+
+Run Claude Code from inside the folder; it reads [CLAUDE.md](CLAUDE.md) automatically and
+already knows the project's rules. Work on a branch rather than `main`:
+
+```
+git checkout -b your-name/what-youre-changing
+```
+
+Rebuild after touching `site/` or `data/`, then hard-refresh with **Ctrl+Shift+R**:
+
+```
+py analysis/build_site_data.py && py analysis/build_standalone.py
+```
+
+## Notes and limits
+
+- Google Trends is a **relative index (0–100)** within each query — never search volume.
+  Terms downloaded in separate exports are not comparable to each other.
+- The budget planner allocates a fixed budget across the year. It is not a forecast and
+  says nothing about ROI or revenue.
+- No forecasting, deliberately. Four to five usable years of monthly data can't support a
+  model that wouldn't mostly be fitting noise.
+- The project started on soccer balls, which turned out to be a dead end — the seasonality
+  was almost entirely World Cups. That exploration is still in `analysis/worldcup_split.py`
+  and `output/`, and it's what motivated the one-off-versus-season test that the rest of
+  the tool is built around.
