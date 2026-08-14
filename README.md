@@ -4,7 +4,7 @@ Turns search-interest seasonality into an editorial and campaign calendar: **wha
 publish, when to start, and which of the peaks everyone plans around don't survive
 contact with the data.**
 
-**[→ Live demo](https://ADAM-USERNAME.github.io/demand-calendar/)** · no install, works
+**[→ Live demo](https://adamkod.github.io/demandcalendar/)** · no install, works
 offline, all data included
 
 ---
