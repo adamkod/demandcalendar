@@ -14,3 +14,6 @@ site/hostcheck.html
 
 # publish-only intermediate, regenerated from the standalone on demand
 site/demand-calendar-hosted.html
+
+# import-parser fixtures + generated self-test
+site/_fixtures/

@@ -1201,29 +1201,84 @@ function BudgetView({ cats, setTip }) {
 }
 
 /* --------------------------------- import -------------------------------- */
-function parseTrendsCSVText(text) {
-  const lines = text.split(/\r?\n/);
-  const hi = lines.findIndex(l => /^"?(Week|Day|Month|Time)"?,/.test(l));
-  if (hi < 0) throw new Error("Not a Google Trends export — no Week/Day/Month/Time header found.");
-  const unq = s => s.trim().replace(/^"|"$/g, "").trim();
-  const kind = unq(lines[hi].split(",")[0]);
-  if (kind === "Day") throw new Error("Daily export detected. Use Past 5 years (weekly) or a 10+ year range (monthly).");
-  const termNames = lines[hi].split(",").slice(1).map(c => unq(c).split(":")[0].trim()).filter(Boolean);
-  const dates = [], cols = termNames.map(() => []);
-  for (const line of lines.slice(hi + 1)) {
-    if (!line.trim()) continue;
-    const cells = line.split(",");
-    dates.push(unq(cells[0]));
-    cells.slice(1).forEach((c, i) => {
-      if (i < cols.length) { const v = unq(c); cols[i].push(v === "<1" ? 0.5 : parseFloat(v) || 0); }
+const unq = s => s.trim().replace(/^"|"$/g, "").trim();
+
+/* Split one CSV row, respecting quoted fields. A plain split(",") turns the
+   "$1,200" a spreadsheet exports into two cells and reads it as 1 — silently
+   wrong by three orders of magnitude, which is worse than refusing the file. */
+function splitCSVLine(line) {
+  const out = [];
+  let cur = "", inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; }   // escaped quote
+        else inQuotes = false;
+      } else cur += c;
+    } else if (c === '"') inQuotes = true;
+    else if (c === ",") { out.push(cur); cur = ""; }
+    else cur += c;
+  }
+  out.push(cur);
+  return out;
+}
+
+/* Accept a date in the shapes a spreadsheet actually produces, and return it
+   normalised to YYYY-MM-DD. Returns null when the cell isn't a date at all,
+   which is how the header row is found. */
+function parseDateCell(raw) {
+  const s = unq(raw || "");
+  if (!s) return null;
+  let m = s.match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$/);          // 2024-07 / 2024-07-15
+  if (m) return `${m[1]}-${m[2].padStart(2, "0")}-${(m[3] || "01").padStart(2, "0")}`;
+  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);          // 07/15/2024
+  if (m) return `${m[3]}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
+  m = s.match(/^([A-Za-z]{3,9})\s+(\d{4})$/);                      // Jul 2024
+  if (m) {
+    const i = MONTHS.findIndex(x => x.toLowerCase() === m[1].slice(0, 3).toLowerCase());
+    if (i >= 0) return `${m[2]}-${String(i + 1).padStart(2, "0")}-01`;
+  }
+  return null;
+}
+
+/* Reads a Google Trends export *or* any spreadsheet with dates in the first
+   column and numbers after it — bookings, sales, ticket counts. Both speakers
+   pitch that second case, so it has to actually work: the header row is found by
+   looking for the first row whose first cell is a date, not by matching Trends'
+   own column names. */
+function parseSeriesCSVText(text) {
+  const rows = text.split(/\r?\n/).filter(l => l.trim()).map(splitCSVLine);
+  const firstData = rows.findIndex(r => parseDateCell(r[0]) !== null);
+  if (firstData < 1)
+    throw new Error("No dated rows found. The first column needs dates "
+      + "(2024-07-15, 07/15/2024 or Jul 2024) and numbers in the columns after it.");
+
+  const header = rows[firstData - 1];
+  const names = header.slice(1)
+    .map((c, i) => unq(c).split(":")[0].trim() || `Series ${i + 1}`);
+  if (!names.length) throw new Error("Found dates but no value columns beside them.");
+
+  const dates = [], cols = names.map(() => []);
+  for (const r of rows.slice(firstData)) {
+    const d = parseDateCell(r[0]);
+    if (!d) continue;
+    dates.push(d);
+    names.forEach((_, i) => {
+      const v = unq(r[i + 1] || "");
+      cols[i].push(v === "<1" ? 0.5 : (parseFloat(v.replace(/[$,%\s]/g, "")) || 0));
     });
   }
-  let granularity = kind === "Month" ? "monthly" : kind === "Week" ? "weekly" : null;
-  if (!granularity) {           // "Time" header: infer from row spacing
-    const d0 = new Date(dates[0]), d1 = new Date(dates[1]);
-    granularity = (d1 - d0) / 864e5 <= 10 ? "weekly" : "monthly";
-  }
-  return { granularity, terms: termNames.map((n, i) => ({ name: n, dates, values: cols[i] })) };
+  if (dates.length < 24)
+    throw new Error(`Only ${dates.length} rows of data. Seasonality needs at least `
+      + "two years so it can check whether a pattern repeats.");
+
+  const gap = (new Date(dates[1]) - new Date(dates[0])) / 864e5;
+  if (gap > 0 && gap < 5)
+    throw new Error("This looks like daily data, which is too noisy to read a season "
+      + "from. Roll it up to weekly or monthly first.");
+  const granularity = gap <= 10 ? "weekly" : "monthly";
+  return { granularity, terms: names.map((n, i) => ({ name: n, dates, values: cols[i] })) };
 }
 
 function ImportDialog({ cats, open, onClose, onDone }) {
@@ -1234,10 +1289,12 @@ function ImportDialog({ cats, open, onClose, onDone }) {
   return html`
     <div class="fixed inset-0 z-50 grid place-items-center bg-slate-900/25 p-5 backdrop-blur-sm" onClick=${onClose}>
       <div class=${CARD + " w-full max-w-lg p-6"} onClick=${e => e.stopPropagation()}>
-        <h2 class="text-[17px] font-semibold text-slate-800">Import a Google Trends CSV</h2>
+        <h2 class="text-[17px] font-semibold text-slate-800">Import your own data</h2>
         <p class="mt-2 text-[13px] leading-relaxed text-slate-500">
-          Export from trends.google.com → “Interest over time” → ⬇. Use a 10+ year range for the
-          monthly file and Past 5 years for weekly. Granularity is detected automatically.
+          Any spreadsheet with <b>dates in the first column</b> and numbers beside them —
+          bookings, sales, ticket counts, web traffic — or a Google Trends export
+          (trends.google.com → “Interest over time” → ⬇). Weekly or monthly, at least two
+          years so a pattern can be shown to repeat. Granularity is detected automatically.
         </p>
         <div class="mt-4 flex flex-wrap items-center gap-3">
           <select value=${catId} onChange=${e => setCatId(e.target.value)}
@@ -1248,7 +1305,7 @@ function ImportDialog({ cats, open, onClose, onDone }) {
             onChange=${async e => {
               const f = e.target.files[0]; if (!f) return;
               try {
-                const p = parseTrendsCSVText(await f.text());
+                const p = parseSeriesCSVText(await f.text());
                 setPending({ p, name: f.name });
                 setMsg({ ok: true, text: `Detected ${p.granularity} data · ${p.terms[0].dates.length} rows `
                   + `(${p.terms[0].dates[0]} → ${p.terms[0].dates.at(-1)}) · terms: `
