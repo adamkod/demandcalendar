@@ -21,6 +21,7 @@ import json
 import math
 import os
 import random
+import re
 import statistics
 import sys
 from datetime import date, timedelta
@@ -317,6 +318,37 @@ def build(force_sample=False):
     return out
 
 
+def stamp_script_versions():
+    """Version-stamp the local <script src> tags in site/index.html.
+
+    Browsers cache data.js and app.js aggressively, and a plain refresh keeps
+    serving the previous build — which has cost real debugging time more than
+    once, including chasing a bug in a file the browser was not loading. A short
+    content hash in the query string makes a changed file a different URL, so a
+    rebuild is picked up without anyone having to know about Ctrl+Shift+R.
+    """
+    import hashlib
+    index = os.path.join(ROOT, "site", "index.html")
+    if not os.path.exists(index):
+        return
+    html = open(index, encoding="utf-8").read()
+
+    def rewrite(m):
+        pre, src, post = m.group(1), m.group(2), m.group(3)
+        bare = src.split("?")[0]
+        path = os.path.join(ROOT, "site", *bare.split("/"))
+        if not os.path.exists(path):
+            return m.group(0)
+        h = hashlib.sha1(open(path, "rb").read()).hexdigest()[:8]
+        return f'{pre}{bare}?v={h}{post}'
+
+    out = re.sub(r'(<script src=")([^"]+)(")', rewrite, html)
+    if out != html:
+        with open(index, "w", encoding="utf-8", newline="\n") as f:
+            f.write(out)
+        print("  stamped script versions in site/index.html")
+
+
 def main():
     data = build(force_sample="--sample" in sys.argv)
     os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
@@ -334,8 +366,7 @@ def main():
         print(f"  {c['label']:<12} {', '.join(bits)}")
     print("  R = real export, S = synthetic sample; first letter monthly, "
           "second weekly")
-    print("\n  Reload site/index.html with Ctrl+Shift+R — browsers cache data.js "
-          "and a\n  plain refresh will keep showing the previous build.")
+    stamp_script_versions()
 
 
 if __name__ == "__main__":

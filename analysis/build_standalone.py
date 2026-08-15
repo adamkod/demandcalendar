@@ -28,7 +28,9 @@ def main():
     missing, inlined = [], []
 
     def swap(match):
-        rel = match.group(1)
+        # Strip the cache-busting ?v=<hash> that build_site_data.py stamps on;
+        # it is meaningless once the file is inlined.
+        rel = match.group(1).split("?")[0]
         path = os.path.join(SITE, *rel.split("/"))
         if not os.path.exists(path):
             missing.append(rel)
