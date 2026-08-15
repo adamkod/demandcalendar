@@ -105,6 +105,32 @@ function Header({ view, setView, onImport }) {
     </header>`;
 }
 
+/* ------------------------------- cameo ----------------------------------- */
+/* A category's character crosses the screen when its pill is switched on.
+   Decorative only — it announces nothing to screen readers, intercepts no
+   clicks, and unmounts as soon as the traverse ends. */
+const CAMEO = {
+  births:      { icon: "baby",       size: 190 },
+  marriages:   { icon: "heart",      size: 175 },
+  divorces:    { icon: "heart-crack", size: 175 },
+  vasectomies: { icon: "scissors",   size: 170 },
+};
+
+function Cameo({ run, onDone }) {
+  if (!run) return null;
+  const t = theme(run.id), c = CAMEO[run.id];
+  if (!c) return null;
+  return html`
+    <div class="cameo-layer" aria-hidden="true">
+      <div key=${run.n} class=${"cameo-travel cameo-" + run.id} onAnimationEnd=${onDone}>
+        <span class="cameo-body" style=${{ color: t.mid, display: "block",
+              filter: `drop-shadow(0 18px 28px ${t.edge})` }}>
+          <${Icon} name=${c.icon} size=${c.size} className="opacity-90" />
+        </span>
+      </div>
+    </div>`;
+}
+
 function Hero({ cats, active, toggle }) {
   return html`
     <div class="pt-12 pb-9">
@@ -1355,10 +1381,20 @@ function App() {
   const cats = useMemo(() => { refreshData(); return CATS; }, [nonce]);
   const [active, setActive] = useState(cats.map(c => c.id));
 
-  const toggle = id => setActive(prev =>
-    id === "__all" ? cats.map(c => c.id)
-      : prev.includes(id) ? (prev.length === 1 ? prev : prev.filter(x => x !== id))
+  // The cameo fires only when a category is switched *on* by its own pill —
+  // not on "Show all", which would send four characters across at once, and not
+  // on switch-off, where a victory lap makes no sense. `n` retriggers the CSS
+  // animation when the same pill is clicked twice.
+  const [cameo, setCameo] = useState(null);
+  const cameoN = useRef(0);
+  const toggle = id => {
+    if (id === "__all") { setActive(cats.map(c => c.id)); return; }
+    const turningOn = !active.includes(id);
+    setActive(prev => prev.includes(id)
+      ? (prev.length === 1 ? prev : prev.filter(x => x !== id))
       : [...prev, id]);
+    if (turningOn) setCameo({ id, n: ++cameoN.current });
+  };
 
   const rows = useMemo(() => cats.filter(c => active.includes(c.id)).map(c => {
     const term = defaultTerm(c);
@@ -1442,6 +1478,7 @@ function App() {
         : html`<${BudgetView} cats=${cats} setTip=${setTip} />`}
       </main>
       <${Tooltip} tip=${tip} />
+      <${Cameo} run=${cameo} onDone=${() => setCameo(null)} />
       <${ImportDialog} cats=${cats} open=${importOpen} onClose=${() => setImportOpen(false)}
         onDone=${() => { setImportOpen(false); setNonce(n => n + 1); }} />
     </div>`;

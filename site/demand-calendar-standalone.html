@@ -1233,8 +1233,52 @@ input:where([type='button'], [type='reset'], [type='submit']),
   input[type=range]::-moz-range-track { height: 5px; border-radius: 999px; background: #E2E8F0; }
   input[type=range]::-moz-range-thumb { height: 16px; width: 16px; border: 1px solid #CBD5E1;
     border-radius: 999px; background: #fff; box-shadow: 0 1px 3px rgba(15,23,42,.18); cursor: pointer; }
+  /* ---- category cameo -------------------------------------------------
+     Clicking a filter pill sends that category's character across the screen.
+     Outer element carries the traverse, inner carries the gait, so the two
+     never fight over `transform`. Purely decorative: aria-hidden, pointer
+     events off, and removed from the DOM the moment it finishes. */
+  .cameo-layer { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 60; }
+  .cameo-travel { position: absolute; top: 52%; left: 0; will-change: transform;
+    animation: cameo-cross 2.9s cubic-bezier(.35,0,.65,1) forwards; }
+  .cameo-body { display: block; will-change: transform; }
+  @keyframes cameo-cross {
+    from { transform: translate3d(-28vw, -50%, 0); }
+    to   { transform: translate3d(128vw, -50%, 0); }
+  }
+  /* Birth — a waddle: rock side to side and bob on each step. */
+  .cameo-births .cameo-body { animation: cameo-waddle .52s ease-in-out infinite; }
+  @keyframes cameo-waddle {
+    0%,100% { transform: rotate(-9deg) translateY(0); }
+    50%     { transform: rotate(9deg) translateY(-14px); }
+  }
+  /* Marriage — floats, with a heartbeat. */
+  .cameo-marriages .cameo-body { animation: cameo-float 1.5s ease-in-out infinite; }
+  @keyframes cameo-float {
+    0%,100% { transform: translateY(0) scale(1); }
+    25%     { transform: translateY(-18px) scale(1.06); }
+    40%     { transform: translateY(-18px) scale(.98); }
+  }
+  /* Divorce — the break: shudders, then tips over as it leaves. */
+  .cameo-divorces .cameo-body { animation: cameo-break 2.9s ease-in forwards; }
+  @keyframes cameo-break {
+    0%,55% { transform: rotate(0) translateY(0); }
+    60%    { transform: rotate(-6deg) translateY(-6px); }
+    65%    { transform: rotate(7deg) translateY(0); }
+    70%    { transform: rotate(-5deg); }
+    100%   { transform: rotate(38deg) translateY(70px); }
+  }
+  /* Vasectomy — snips its way across. */
+  .cameo-vasectomies .cameo-body { animation: cameo-snip .38s ease-in-out infinite;
+    transform-origin: 22% 22%; }
+  @keyframes cameo-snip {
+    0%,100% { transform: rotate(-16deg); }
+    50%     { transform: rotate(6deg); }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    .cameo-layer { display: none; }
   }
 </style>
 </head>
@@ -1270,6 +1314,8 @@ window.LUCIDE = {
   "trending-down": '<polyline points="22 17 13.5 8.5 8.5 13.5 2 7" /> <polyline points="16 17 22 17 22 11" />',
   "trending-up": '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17" /> <polyline points="16 7 22 7 22 13" />',
   "triangle-alert": '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" /> <path d="M12 9v4" /> <path d="M12 17h.01" />',
+  "scissors": '<circle cx="6" cy="6" r="3" /> <path d="M8.12 8.12 12 12" /> <path d="M20 4 8.12 15.88" /> <circle cx="6" cy="18" r="3" /> <path d="M14.8 14.8 20 20" />',
+  "footprints": '<path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z" /> <path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z" /> <path d="M16 17h4" /> <path d="M4 13h4" />',
   "zap": '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" />'
 };
 
@@ -2212,6 +2258,32 @@ function Header({ view, setView, onImport }) {
         </button>
       </div>
     </header>`;
+}
+
+/* ------------------------------- cameo ----------------------------------- */
+/* A category's character crosses the screen when its pill is switched on.
+   Decorative only — it announces nothing to screen readers, intercepts no
+   clicks, and unmounts as soon as the traverse ends. */
+const CAMEO = {
+  births:      { icon: "baby",       size: 190 },
+  marriages:   { icon: "heart",      size: 175 },
+  divorces:    { icon: "heart-crack", size: 175 },
+  vasectomies: { icon: "scissors",   size: 170 },
+};
+
+function Cameo({ run, onDone }) {
+  if (!run) return null;
+  const t = theme(run.id), c = CAMEO[run.id];
+  if (!c) return null;
+  return html`
+    <div class="cameo-layer" aria-hidden="true">
+      <div key=${run.n} class=${"cameo-travel cameo-" + run.id} onAnimationEnd=${onDone}>
+        <span class="cameo-body" style=${{ color: t.mid, display: "block",
+              filter: `drop-shadow(0 18px 28px ${t.edge})` }}>
+          <${Icon} name=${c.icon} size=${c.size} className="opacity-90" />
+        </span>
+      </div>
+    </div>`;
 }
 
 function Hero({ cats, active, toggle }) {
@@ -3464,10 +3536,20 @@ function App() {
   const cats = useMemo(() => { refreshData(); return CATS; }, [nonce]);
   const [active, setActive] = useState(cats.map(c => c.id));
 
-  const toggle = id => setActive(prev =>
-    id === "__all" ? cats.map(c => c.id)
-      : prev.includes(id) ? (prev.length === 1 ? prev : prev.filter(x => x !== id))
+  // The cameo fires only when a category is switched *on* by its own pill —
+  // not on "Show all", which would send four characters across at once, and not
+  // on switch-off, where a victory lap makes no sense. `n` retriggers the CSS
+  // animation when the same pill is clicked twice.
+  const [cameo, setCameo] = useState(null);
+  const cameoN = useRef(0);
+  const toggle = id => {
+    if (id === "__all") { setActive(cats.map(c => c.id)); return; }
+    const turningOn = !active.includes(id);
+    setActive(prev => prev.includes(id)
+      ? (prev.length === 1 ? prev : prev.filter(x => x !== id))
       : [...prev, id]);
+    if (turningOn) setCameo({ id, n: ++cameoN.current });
+  };
 
   const rows = useMemo(() => cats.filter(c => active.includes(c.id)).map(c => {
     const term = defaultTerm(c);
@@ -3551,6 +3633,7 @@ function App() {
         : html`<${BudgetView} cats=${cats} setTip=${setTip} />`}
       </main>
       <${Tooltip} tip=${tip} />
+      <${Cameo} run=${cameo} onDone=${() => setCameo(null)} />
       <${ImportDialog} cats=${cats} open=${importOpen} onClose=${() => setImportOpen(false)}
         onDone=${() => { setImportOpen(false); setNonce(n => n + 1); }} />
     </div>`;

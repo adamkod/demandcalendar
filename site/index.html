@@ -33,8 +33,52 @@
   input[type=range]::-moz-range-track { height: 5px; border-radius: 999px; background: #E2E8F0; }
   input[type=range]::-moz-range-thumb { height: 16px; width: 16px; border: 1px solid #CBD5E1;
     border-radius: 999px; background: #fff; box-shadow: 0 1px 3px rgba(15,23,42,.18); cursor: pointer; }
+  /* ---- category cameo -------------------------------------------------
+     Clicking a filter pill sends that category's character across the screen.
+     Outer element carries the traverse, inner carries the gait, so the two
+     never fight over `transform`. Purely decorative: aria-hidden, pointer
+     events off, and removed from the DOM the moment it finishes. */
+  .cameo-layer { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 60; }
+  .cameo-travel { position: absolute; top: 52%; left: 0; will-change: transform;
+    animation: cameo-cross 2.9s cubic-bezier(.35,0,.65,1) forwards; }
+  .cameo-body { display: block; will-change: transform; }
+  @keyframes cameo-cross {
+    from { transform: translate3d(-28vw, -50%, 0); }
+    to   { transform: translate3d(128vw, -50%, 0); }
+  }
+  /* Birth — a waddle: rock side to side and bob on each step. */
+  .cameo-births .cameo-body { animation: cameo-waddle .52s ease-in-out infinite; }
+  @keyframes cameo-waddle {
+    0%,100% { transform: rotate(-9deg) translateY(0); }
+    50%     { transform: rotate(9deg) translateY(-14px); }
+  }
+  /* Marriage — floats, with a heartbeat. */
+  .cameo-marriages .cameo-body { animation: cameo-float 1.5s ease-in-out infinite; }
+  @keyframes cameo-float {
+    0%,100% { transform: translateY(0) scale(1); }
+    25%     { transform: translateY(-18px) scale(1.06); }
+    40%     { transform: translateY(-18px) scale(.98); }
+  }
+  /* Divorce — the break: shudders, then tips over as it leaves. */
+  .cameo-divorces .cameo-body { animation: cameo-break 2.9s ease-in forwards; }
+  @keyframes cameo-break {
+    0%,55% { transform: rotate(0) translateY(0); }
+    60%    { transform: rotate(-6deg) translateY(-6px); }
+    65%    { transform: rotate(7deg) translateY(0); }
+    70%    { transform: rotate(-5deg); }
+    100%   { transform: rotate(38deg) translateY(70px); }
+  }
+  /* Vasectomy — snips its way across. */
+  .cameo-vasectomies .cameo-body { animation: cameo-snip .38s ease-in-out infinite;
+    transform-origin: 22% 22%; }
+  @keyframes cameo-snip {
+    0%,100% { transform: rotate(-16deg); }
+    50%     { transform: rotate(6deg); }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    .cameo-layer { display: none; }
   }
 </style>
 </head>
