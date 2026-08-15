@@ -1387,13 +1387,23 @@ function App() {
   // animation when the same pill is clicked twice.
   const [cameo, setCameo] = useState(null);
   const cameoN = useRef(0);
+  // Mirror the selection in a ref. Reading `active` straight from the closure
+  // goes stale between two clicks in the same render, which silently swallows
+  // the cameo on a quick off-then-on; the ref is current the moment we click.
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const toggle = id => {
-    if (id === "__all") { setActive(cats.map(c => c.id)); return; }
-    const turningOn = !active.includes(id);
-    setActive(prev => prev.includes(id)
-      ? (prev.length === 1 ? prev : prev.filter(x => x !== id))
-      : [...prev, id]);
-    if (turningOn) setCameo({ id, n: ++cameoN.current });
+    if (id === "__all") {
+      activeRef.current = cats.map(c => c.id);
+      setActive(activeRef.current);
+      return;
+    }
+    const on = activeRef.current.includes(id);
+    if (on && activeRef.current.length === 1) return;      // never empty the board
+    activeRef.current = on ? activeRef.current.filter(x => x !== id)
+                           : [...activeRef.current, id];
+    setActive(activeRef.current);
+    if (!on) setCameo({ id, n: ++cameoN.current });
   };
 
   const rows = useMemo(() => cats.filter(c => active.includes(c.id)).map(c => {
